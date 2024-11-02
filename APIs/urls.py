@@ -8,4 +8,5 @@ urlpatterns = [
     path("v1/get-users/", views.get_users, name="get_users"),
     path("v1/get-csrf-token/", views.get_csrf_token, name="get_csrf_token"),
     path("v1/fetch-user-token/", views.fetch_user_token, name="fetch_user_token"),
+    path("v1/login/", views.login_user, name="login_user"),
 ]
