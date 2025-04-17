@@ -1,74 +1,79 @@
 from rest_framework import serializers
-from django.contrib.auth.models import User
+from rest_framework.exceptions import ValidationError
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from .models import Genre, User
 
 
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = [
-            "id",
-            "username",
-            "email",
-            "password",
-            "date_joined",
-            "is_active",
-            "is_staff",
-        ]
-        # extra_kwargs = {"password": {"write_only": True}}
-
-    def validate_password(self, value):
-        print(f"Validating password: {value}")
-        if not isinstance(value, str):
-            raise serializers.ValidationError("Password must be a string.")
-        if len(value) < 8:
-            raise serializers.ValidationError(
-                "Password must be at least 8 characters long."
-            )
-        return value
-
-    def validate_username(self, value):
-        print(f"Validating username: {value}")
-        if not isinstance(value, str):
-            raise serializers.ValidationError("Username must be a string.")
-        if value.isdigit():
-            raise serializers.ValidationError("Username cannot be purely numeric.")
-        return value
-
-    def validate_email(self, value):
-        print(f"Validating email: {value}")
-        if not isinstance(value, str):
-            raise serializers.ValidationError("Email must be a string.")
-        if "@" not in value or "." not in value:
-            raise serializers.ValidationError("Enter a valid email address.")
-        return value
+class RegisterUserSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    username = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+    birth_date = serializers.DateField()  # Add birth_date to the serializer
 
     def create(self, validated_data):
-        required_fields = ["username", "password"]
-        missing_fields = [
-            field for field in required_fields if field not in validated_data
-        ]
+        email = validated_data["email"]
+        username = validated_data["username"]
+        password = validated_data["password"]
+        birth_date = validated_data["birth_date"]
 
-        if missing_fields:
-            raise serializers.ValidationError(
-                {field: "This field is required." for field in missing_fields}
-            )
-
-        user = User(
-            username=validated_data["username"],
-            email=validated_data.get("email", ""),
-            is_staff=False,
+        # Use the custom manager to register the user
+        user = User.objects.register_user(
+            email=email, username=username, password=password, birth_date=birth_date
         )
-        user.set_password(validated_data["password"])
-        user.save()
         return user
 
-    def update(self, instance, validated_data):
-        instance.username = validated_data.get("username", instance.username)
-        instance.email = validated_data.get("email", instance.email)
-        instance.is_staff = validated_data.get("is_staff", instance.is_staff)
-        instance.is_active = validated_data.get("is_active", instance.is_active)
-        password = validated_data.get("password", None)
-        if password:
-            instance.set_password(password)
-        instance.save()
-        return instance
+
+class VerifyEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    key = serializers.CharField(max_length=6)
+
+    def validate(self, data):
+        email = data.get("email")
+        key = data.get("key")
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError(
+                {"email": "User with this email does not exist."}
+            )
+
+        if not user.verify_email(key):
+            raise serializers.ValidationError({"key": "Invalid verification key."})
+
+        return data
+
+
+class SelectGenresSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    genre_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+
+    def validate_user_id(self, value):
+        try:
+            user = User.objects.get(id=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User does not exist.")
+        return value
+
+    def validate_genre_ids(self, value):
+        valid_genres = Genre.objects.filter(id__in=value)
+        if len(valid_genres) != len(value):
+            raise serializers.ValidationError("One or more genre IDs are invalid.")
+        return value
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        # Call the parent class's validate method to authenticate the user
+        data = super().validate(attrs)
+
+        # Check if the user has verified their email
+        if not self.user.is_email_verified:
+            raise ValidationError("Email is not verified.")
+
+        return data
+
+
+class UserGenresSerializer(serializers.Serializer):
+    genres = serializers.ListField(child=serializers.CharField())

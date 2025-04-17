@@ -1,144 +1,171 @@
-import logging
 from rest_framework import status
-from .serializers import UserSerializer
-from django.contrib.auth.models import User
 from rest_framework.response import Response
-from django.middleware.csrf import get_token
-from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from django.contrib.auth import authenticate
+from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+from .models import (
+    Movie,
+    MovieGenre,
+    User,
+    UserGenre,
+    UserSuggestionList,
+    UserWatchedMovie,
+)
+from .serializers import (
+    CustomTokenObtainPairSerializer,
+    RegisterUserSerializer,
+    SelectGenresSerializer,
+    VerifyEmailSerializer,
+)
 
 
-logger = logging.getLogger(__name__)
-
-
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def get_csrf_token(request):
-    csrf_token = get_token(request)
-    return Response({"csrfToken": csrf_token})
-
-
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def get_users(request):
-    try:
-        users = User.objects.all()
-        serializer = UserSerializer(users, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    except Exception as e:
-        logger.error("Error fetching users: %s", str(e))
-        return Response(
-            {"error": "An error occurred while fetching users."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-
-@api_view(["POST"])
-def create_user(request):
-    serializer = UserSerializer(data=request.data)
-    if serializer.is_valid():
-        try:
-            user = serializer.save()
-            token, created = Token.objects.get_or_create(user=user)
+class RegisterUserView(APIView):
+    def post(self, request):
+        serializer = RegisterUserSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
             return Response(
-                {"user": serializer.data, "token": token.key},
+                {
+                    "message": "User registered successfully. Check your email for the verification code."
+                },
                 status=status.HTTP_201_CREATED,
             )
-        except Exception as e:
-            logger.error(f"Error creating token: {str(e)}")
-            return Response(
-                {"error": "An error occurred while creating the user token."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-    else:
-        logger.error(f"Validation errors: {serializer.errors}")
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def update_user(request):
-    user_id = request.data.get("user_id")
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
-    serializer = UserSerializer(user, data=request.data, partial=True)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_200_OK)
-    else:
-        logger.error("Validation errors: %s", serializer.errors)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def delete_user(request):
-    user_id = request.data.get("user_id")
-    try:
-        user = User.objects.get(id=user_id)
-        user.delete()
-        return Response(
-            {"message": "User deleted successfully."}, status=status.HTTP_200_OK
-        )
-    except User.DoesNotExist:
-        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error("Error deleting user: %s", str(e))
-        return Response(
-            {"error": "An error occurred while deleting the user."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+class VerifyEmailView(APIView):
+    def post(self, request):
+
+        serializer = VerifyEmailSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data["email"]
+            user = User.objects.filter(email=email).first()
+            user.is_active = True
+            user.save()
+            movies = Movie.objects.all()
+            movies_list = list(movies)
+            for movie in movies_list:
+                suggestion = UserSuggestionList(
+                    user=user, movie=movie, total=0, is_watched=False
+                )
+                suggestion.save()
+
+            return Response(
+                {"message": "Email verified successfully."}, status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(["POST"])
-@permission_classes([IsAdminUser])
-def fetch_user_token(request):
-    user_id = request.data.get("user_id")
-    try:
-        user = User.objects.get(id=user_id)
-        token, created = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key}, status=status.HTTP_200_OK)
-    except User.DoesNotExist:
-        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-    except Exception as e:
-        logger.error("Error fetching token: %s", str(e))
-        return Response(
-            {"error": "An error occurred while fetching the token."},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+class SelectGenresView(APIView):
+    def post(self, request):
+        serializer = SelectGenresSerializer(data=request.data)
+        if serializer.is_valid():
+            user_id = serializer.validated_data["user_id"]
+            genre_ids = serializer.validated_data["genre_ids"]
+
+            # erase points of old genres
+            user_old_genres = UserGenre.objects.filter(user_id=user_id)
+            user_suggestion_list = list(
+                UserSuggestionList.objects.filter(user_id=user_id)
+            )
+            for suggestion in user_suggestion_list:
+                cur_suggestion = MovieGenre.objects.filter(movie_id=suggestion.movie_id)
+                suggestion.total += -self.genres_delta(user_old_genres, cur_suggestion)
+                suggestion.save()
+
+            # Clear existing genre preferences
+            UserGenre.objects.filter(user_id=user_id).delete()
+
+            # Add new genre preferences and adjust genres delta
+            for genre_id in genre_ids:
+                UserGenre.objects.create(user_id=user_id, genre_id=genre_id)
+            for suggestion in user_suggestion_list:
+                cur_suggestion = MovieGenre.objects.filter(movie_id=suggestion.movie_id)
+                suggestion.total = self.genres_delta(genre_ids, list(cur_suggestion))
+                suggestion.save()
+            return Response(
+                {"message": "Genre preferences updated successfully."},
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def genres_delta(self, list1, list2):
+        le = max(len(list1), len(list2))
+        if le == 0:
+            return 0
+        qu = le * (le + 1) / 2
+        tot = 1000
+        tot /= qu
+        val = 0
+        for i in range(len(list1)):
+            for j in range(len(list2)):
+                if list1[i] == list2[j].genre_id:
+                    val += int(((le - max(i, j)) * tot) + 0.5)
+        return val
 
 
-@api_view(["POST"])
-def login_user(request):
-    username = request.data.get("username")
-    password = request.data.get("password")
-    
-    if not username or not password:
-        return Response(
-            {"error": "Username and password are required."},
-            status=status.HTTP_400_BAD_REQUEST,
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+class GetUserGenresView(APIView):
+    def get(self, request, user_id):
+        try:
+            # Get the user
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Get the user's genres
+        user_genres = UserGenre.objects.filter(user_id=user).select_related("genre")
+        genre_names = [ug.genre.name for ug in user_genres]
+
+        # Serialize the response
+        response_data = {"genres": genre_names}
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class GetTop10Suggestion(APIView):
+    def get(self, request, user_id):
+        try:
+            # Get the user
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        user_suggestion = UserSuggestionList.objects.filter(
+            user_id=user, is_watched=False
+        ).order_by("-total")[:10]
+
+        if not user_suggestion.exists():  # Check if empty
+            watched_movie_ids = UserWatchedMovie.objects.filter(user=user).values_list(
+                "movie_id", flat=True
+            )
+
+            suggestion = (
+                UserSuggestionList.objects.filter(user_id=user)
+                .exclude(movie_id__in=watched_movie_ids)
+                .order_by("-total")
+            )
+            user_suggestions = UserSuggestionList.objects.filter(
+                user_id=user, is_watched=False
+            ).order_by("-total")[:10]
+
+        suggestion_ids = (
+            UserSuggestionList.objects.filter(user_id=user, is_watched=False)
+            .order_by("-total")
+            .values_list("id", flat=True)[:10]
         )
-    
-    # Use authenticate to verify the username and password
-    user = authenticate(username=username, password=password)
-    if user is not None:
-        logger.info(f"User {username} logged in successfully.")
-        return Response(
-            {
-                "username": user.username,
-                "date_joined": user.date_joined.strftime("%Y-%m-%d %H:%M:%S"),
-            },
-            status=status.HTTP_200_OK,
+        UserSuggestionList.objects.filter(id__in=list(suggestion_ids)).update(
+            is_watched=True
         )
-    else:
-        logger.warning(f"Invalid login attempt for user {username}.")
-    
-    return Response(
-        {"error": "Invalid username or password."},
-        status=status.HTTP_401_UNAUTHORIZED,
-    )
+        movies_names = [us.movie_id for us in user_suggestion]
+
+        # Serialize the response
+        response_data = {"movie_ids": movies_names}
+        return Response(response_data, status=status.HTTP_200_OK)

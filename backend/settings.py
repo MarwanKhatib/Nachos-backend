@@ -10,20 +10,21 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
+
 from decouple import config
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-
-SECRET_KEY = config('SECRET_KEY')
+SECRET_KEY = config("SECRET_KEY")
 
 DEBUG = True
 
-ALLOWED_HOSTS = [
-    "marwankhatib.github.io","127.0.0.1","localhost"
-]
-
+# ALLOWED_HOSTS = [
+#     "marwankhatib.github.io","127.0.0.1","localhost"
+# ]
 
 
 INSTALLED_APPS = [
@@ -35,7 +36,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "APIs",
     "rest_framework",
-    "rest_framework.authtoken",
+    # "rest_framework.authtoken",
+    "rest_framework_simplejwt",
     "corsheaders",
 ]
 
@@ -50,9 +52,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "https://marwankhatib.github.io",
-]
+# CORS_ALLOWED_ORIGINS = [
+#     "https://marwankhatib.github.io",
+# ]
 
 ROOT_URLCONF = "backend.urls"
 
@@ -75,15 +77,14 @@ TEMPLATES = [
 WSGI_APPLICATION = "backend.wsgi.application"
 
 
-
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": config('DB_NAME'),
-        "USER": config('DB_USER'),
-        "PASSWORD": config('DB_PASSWORD'),
-        "HOST": config('DB_HOST'),  
-        "PORT": config('DB_PORT'),  
+        "NAME": config("DB_NAME"),
+        "USER": config("DB_USER"),
+        "PASSWORD": config("DB_PASSWORD"),
+        "HOST": config("DB_HOST"),
+        "PORT": config("DB_PORT"),
     }
 }
 
@@ -104,7 +105,6 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-
 LANGUAGE_CODE = "en-us"
 
 TIME_ZONE = "UTC"
@@ -118,16 +118,34 @@ APPEND_SLASH = True
 STATIC_URL = "static/"
 
 
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# REST_FRAMEWORK = {
+#     "DEFAULT_AUTHENTICATION_CLASSES": [
+#         "rest_framework.authentication.TokenAuthentication",
+#         "rest_framework.authentication.SessionAuthentication",
+#         "rest_framework.authentication.BasicAuthentication",
+#     ],
+#     "DEFAULT_PERMISSION_CLASSES": [
+#         "rest_framework.permissions.AllowAny",
+#     ],
+# }
+
+
+AUTH_USER_MODEL = "APIs.User"
+
+
+# JWT Settings
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
-    ],
-    "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.AllowAny",
-    ],
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+}
+
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=30
+    ),  # Access token expires after 30 minutes
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),  # Refresh token expires after 1 day
 }
