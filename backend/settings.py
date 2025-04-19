@@ -88,13 +88,13 @@ DATABASES = {
         "PASSWORD": config("DB_PASSWORD"),
         "HOST": config("DB_HOST"),
         "PORT": config("DB_PORT", default="3306"),
-        "OPTIONS": {
-            "ssl": (
-                {"ssl": True}
-                if config("DB_USE_SSL", default="False").lower() == "true"
-                else {}
-            )
-        },
+        # "OPTIONS": {
+        #     "ssl": (
+        #         {"ssl": True}
+        #         if config("DB_USE_SSL", default="False").lower() == "true"
+        #         else {}
+        #     )
+        # },
     }
 }
 
