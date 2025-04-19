@@ -22,9 +22,12 @@ SECRET_KEY = config("SECRET_KEY")
 
 DEBUG = True
 
-# ALLOWED_HOSTS = [
-#     "marwankhatib.github.io","127.0.0.1","localhost"
-# ]
+ALLOWED_HOSTS = [
+    # "marwankhatib.github.io",
+    "127.0.0.1",
+    "localhost",
+    "nachos-backend.onrender.com",
+]
 
 
 INSTALLED_APPS = [
