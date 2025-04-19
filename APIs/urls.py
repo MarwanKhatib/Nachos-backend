@@ -8,9 +8,11 @@ from .views import (
     RegisterUserView,
     SelectGenresView,
     VerifyEmailView,
+    hello_world,
 )
 
 urlpatterns = [
+    path("", hello_world),
     path("register/", RegisterUserView.as_view(), name="register"),
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),
     path("token/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),

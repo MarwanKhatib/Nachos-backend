@@ -8,10 +8,13 @@ Django==5.2
 django-cors-headers==4.7.0
 djangorestframework==3.16.0
 djangorestframework_simplejwt==5.5.0
+gunicorn==23.0.0
 idna==3.10
 lxml==5.3.2
 more-itertools==10.6.0
+mysql-connector-python==9.3.0
 mysqlclient==2.2.7
+packaging==24.2
 premailer==3.10.0
 PyJWT==2.9.0
 python-decouple==3.8
