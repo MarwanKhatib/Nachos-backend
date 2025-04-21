@@ -47,6 +47,8 @@ class VerifyEmailView(APIView):
             user = User.objects.filter(email=email).first()
             user.is_active = True
             user.save()
+
+
             movies = Movie.objects.all()
             movies_list = list(movies)
             for movie in movies_list:
@@ -135,42 +137,34 @@ class GetUserGenresView(APIView):
 
 class GetTop10Suggestion(APIView):
     def get(self, request, user_id):
+        
         try:
-            # Get the user
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
             return Response(
                 {"error": "User not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
+
         user_suggestion = UserSuggestionList.objects.filter(
             user_id=user, is_watched=False
-        ).order_by("-total")[:10]
+        ).order_by("-total")
 
-        if not user_suggestion.exists():  # Check if empty
-            watched_movie_ids = UserWatchedMovie.objects.filter(user=user).values_list(
-                "movie_id", flat=True
-            )
-
-            suggestion = (
-                UserSuggestionList.objects.filter(user_id=user)
-                .exclude(movie_id__in=watched_movie_ids)
-                .order_by("-total")
-            )
-            user_suggestions = UserSuggestionList.objects.filter(
-                user_id=user, is_watched=False
-            ).order_by("-total")[:10]
-
-        suggestion_ids = (
-            UserSuggestionList.objects.filter(user_id=user, is_watched=False)
-            .order_by("-total")
-            .values_list("id", flat=True)[:10]
-        )
-        UserSuggestionList.objects.filter(id__in=list(suggestion_ids)).update(
-            is_watched=True
-        )
+        if len(user_suggestion) == 0 :
+           
+           UserSuggestionList.objects.filter( user_id = user ).update( is_watched = False )
+           user_suggestion = UserSuggestionList.objects.filter(
+            user_id=user, is_watched=False
+            ).order_by("-total")
+            
+        
+        if len(user_suggestion) > 10 :
+            user_suggestion = user_suggestion[:10]
+        
+        for suggestion in user_suggestion:
+            suggestion.is_watched = True
+            suggestion.save()
         movies_names = [us.movie_id for us in user_suggestion]
-
         # Serialize the response
         response_data = {"movie_ids": movies_names}
         return Response(response_data, status=status.HTTP_200_OK)
