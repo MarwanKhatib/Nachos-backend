@@ -103,3 +103,12 @@ class MovieInfosSerializer ( serializers.Serializer ) :
     producers = serializers.ListField(child=serializers.CharField())
     directors = serializers.ListField(child=serializers.CharField())
     genres = serializers.ListField(child=serializers.CharField())
+
+class WatchlistItemSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    movie_id = serializers.IntegerField()    
+
+class RateMovieSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField()
+    movie_id = serializers.IntegerField()
+    rate = serializers.FloatField(min_value=0, max_value=5)
