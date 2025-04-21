@@ -4,20 +4,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import (
-    Movie,
-    MovieGenre,
-    User,
-    UserGenre,
-    UserSuggestionList,
-    UserWatchedMovie,
-)
-from .serializers import (
-    CustomTokenObtainPairSerializer,
-    RegisterUserSerializer,
-    SelectGenresSerializer,
-    VerifyEmailSerializer,
-)
+from .models import * 
+from .serializers import *
 
 
 def hello_world(request):
@@ -168,3 +156,59 @@ class GetTop10Suggestion(APIView):
         # Serialize the response
         response_data = {"movie_ids": movies_names}
         return Response(response_data, status=status.HTTP_200_OK)
+
+
+
+class GetMovie (APIView) :
+    
+    def get(self, request, movie_id):
+        
+        try:
+            movie = Movie.objects.get(id=movie_id)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Movie not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        movie_actors = MovieActor.objects.filter ( movie_id = movie.id )
+        movie_genres = MovieGenre.objects.filter ( movie_id = movie.id )
+        movie_producers = MovieProducer.objects.filter ( movie_id = movie.id )
+        movie_writers = MovieWriter.objects.filter ( movie_id = movie.id )
+        movie_directors = MovieDirector.objects.filter ( movie_id = movie.id )
+
+        actors = Actor.objects.filter( id__in = movie_actors.values_list('actor_id'))
+        writers = Writer.objects.filter( id__in = movie_writers.values_list('writer_id'))
+        producers = Producer.objects.filter( id__in = movie_producers.values_list('producer_id'))
+        directors = Director.objects.filter( id__in = movie_directors.values_list('director_id'))
+        genres = Genre.objects.filter( id__in = movie_genres.values_list('genre_id'))
+
+
+
+        actors_names = self.setup_pairs(actors)
+        writers_names = self.setup_pairs(writers)
+        producers_names = self.setup_pairs(producers)
+        directors_names = self.setup_pairs(directors)
+        genres_names = self.setup_pairs(genres)
+        
+        movie_data = {
+            "name": movie.name,
+            "description": movie.description,
+            "trailer": movie.trailer,
+            "poster": movie.poster,
+            "language": movie.language.name,
+
+            "actors": actors_names,
+            "writers": writers_names,
+            "producers":producers_names, 
+            "directors": directors_names,
+            "genres": genres_names,
+        }
+
+        serializer = MovieInfosSerializer(data=movie_data)
+        if serializer.is_valid():
+            return Response(serializer.data)
+        return Response(serializer.errors, status=400)
+    
+    def setup_pairs ( self , tmp_list ) :
+        tmp_names = [ tmp.name for tmp in tmp_list ]
+        return tmp_names

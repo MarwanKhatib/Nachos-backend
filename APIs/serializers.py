@@ -77,3 +77,29 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class UserGenresSerializer(serializers.Serializer):
     genres = serializers.ListField(child=serializers.CharField())
+
+
+# a serializer for director - actor - writer - producer - genre - language
+class PairStructuresSerializer (serializers.Serializer) :
+    name = serializers.CharField()
+
+class MovieSerializer ( serializers.Serializer ) :
+    name = serializers.CharField()
+    description = serializers.CharField()
+    trailer = serializers.CharField()
+    poster = serializers.CharField()
+    language = serializers.IntegerField()
+
+
+class MovieInfosSerializer ( serializers.Serializer ) :
+    name = serializers.CharField()
+    description = serializers.CharField()
+    trailer = serializers.CharField()
+    poster = serializers.CharField()
+    language = serializers.CharField()
+
+    actors = serializers.ListField(child=serializers.CharField())
+    writers = serializers.ListField(child=serializers.CharField())
+    producers = serializers.ListField(child=serializers.CharField())
+    directors = serializers.ListField(child=serializers.CharField())
+    genres = serializers.ListField(child=serializers.CharField())
