@@ -9,6 +9,11 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+# join movie community API
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from .models import User, Movie, UserWatchedMovie, MovieCommunity
 
 from .models import * 
 from .serializers import *
@@ -294,10 +299,118 @@ def rate_movie(request):
     )
 
 
+@api_view(['POST'])
+def add_community_comment(request):
+    # Step 1: Validate input data
+    user_id = request.data.get('user_id')
+    movie_id = request.data.get('movie_id')
+    content = request.data.get('content')
+
+    # Step 2: Check if the user and movie exist
+    try:
+        user = User.objects.get(id=user_id)
+        movie = Movie.objects.get(id=movie_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Movie.DoesNotExist:
+        return Response({"error": "Movie not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Step 3: Check if the user has watched the movie
+    if not UserWatchedMovie.objects.filter(user=user, movie=movie).exists():
+        return Response({"error": "You must watch the movie before commenting."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Step 4: Create the comment
+    try:
+        comment = MovieCommunity.objects.create(
+            movie=movie,
+            user=user,
+            content=content
+        )
+        return Response(
+            {"message": "Comment added successfully.", "comment_id": comment.id},
+            status=status.HTTP_201_CREATED
+        )
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['DELETE'])
+def delete_community_comment(request, comment_id):
+    # Step 1: Get the user ID from the request
+    user_id = request.query_params.get('user_id')
+
+    # Step 2: Check if the user exists
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({comment_id}, status=status.HTTP_404_NOT_FOUND)
+
+    # Step 3: Retrieve the comment
+    try:
+        comment = MovieCommunity.objects.get(id=comment_id)
+    except MovieCommunity.DoesNotExist:
+        return Response({"error": "Comment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Step 4: Ensure the user is the owner of the comment
+    if comment.user != user:
+        return Response({"error": "You are not authorized to delete this comment."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Step 5: Delete the comment
+    comment.delete()
+    return Response({"message": "Comment deleted successfully."}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def get_movie_comments(request, movie_id):
+    # Step 1: Extract user_id from the request
+    user_id = request.query_params.get('user_id')
+
+    # Step 2: Validate user_id
+    if not user_id:
+        return Response({"error": "user_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Step 3: Check if the movie exists
+    try:
+        movie = Movie.objects.get(id=movie_id)
+    except Movie.DoesNotExist:
+        return Response({"error": "Movie not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Step 4: Verify that the user has watched the movie
+    if not UserWatchedMovie.objects.filter(user=user, movie=movie).exists():
+        return Response({"error": "You must watch the movie to view its comments."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Step 5: Retrieve all comments for the movie
+    comments = MovieCommunity.objects.filter(movie=movie).order_by('-add_date') 
+
+    # Step 6: Serialize the data
+    serializer = MovieCommentSerializer(comments, many=True)
+
+    # Step 7: Return the serialized data
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+# get rated movie API
+@api_view(['GET'])
+def get_watched_movie_ids(request, user_id):
+    # Step 1: Check if the user exists
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Step 2: Retrieve all watched movie IDs for the user
+    watched_movies = UserWatchedMovie.objects.filter(user=user).values_list('movie_id', flat=True)
+
+    # Step 3: Convert the QuerySet to a list and return it
+    return Response({"watched_movie_ids": list(watched_movies)}, status=status.HTTP_200_OK)
+
+
+
 #### APIs to be proccessed ####
 
-# join movie community API
-# get rated movie API
 # create a group API
 # join a group API
 # block user from group API
@@ -306,7 +419,7 @@ def rate_movie(request):
 # comment in a post API
 # get group post API
 # get user group post API
-# leave a community
+# leave a group
 # delete a post
 
 ###############################

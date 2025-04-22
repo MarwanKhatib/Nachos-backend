@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import Genre, User
+from .models import *
 
 
 class RegisterUserSerializer(serializers.Serializer):
@@ -112,3 +112,11 @@ class RateMovieSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     movie_id = serializers.IntegerField()
     rate = serializers.FloatField(min_value=0, max_value=5)
+
+
+class MovieCommentSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="user.username", read_only=True)
+
+    class Meta:
+        model = MovieCommunity
+        fields = ["id", "username", "content", "add_date"]

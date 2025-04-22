@@ -163,12 +163,11 @@ class UserGenre(models.Model):
         unique_together = ("user", "genre")
 
 
-class MovieCommunity(
-    models.Model
-):  # Represents the comment in the movie comment section
+class MovieCommunity(models.Model):  # Represents the comment in the movie comment section
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     content = models.CharField(max_length=255)
+    add_date = models.DateTimeField(auto_now_add=True)
 
 
 class UserWatchedMovie(models.Model):
