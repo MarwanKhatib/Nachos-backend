@@ -408,21 +408,411 @@ def get_watched_movie_ids(request, user_id):
     return Response({"watched_movie_ids": list(watched_movies)}, status=status.HTTP_200_OK)
 
 
-
-#### APIs to be proccessed ####
-
 # create a group API
-# join a group API
-# block user from group API
-# write a post API
-# like a post API
-# comment in a post API
-# get group post API
-# get user group post API
-# leave a group
-# delete a post
+@api_view(['POST'])
+def create_group(request):
+    serializer = CreateGroupSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    user_id = serializer.validated_data['user_id']
+    group_name = serializer.validated_data['group_name']
+    description = serializer.validated_data['description']
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
 
-###############################
+    # Create the group
+    group = Group.objects.create(name=group_name, description=description)
+
+    # Add the user to the group as an admin
+    UserGroup.objects.create(user=user, group=group, is_admin=True, is_blocked=False)
+
+    return Response({"message": "Group created successfully.", "group_id": group.id}, status=status.HTTP_201_CREATED)
+
+# join a group API
+@api_view(['POST'])
+def join_group(request):
+    serializer = JoinGroupSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = serializer.validated_data["user_id"]
+    group_id = serializer.validated_data["group_id"]
+
+    user = User.objects.get(id=user_id)
+    group = Group.objects.get(id=group_id)
+
+    # Add the user to the group
+    UserGroup.objects.create(user=user, group=group, is_admin=False, is_blocked=False)
+
+    return Response({"message": "User joined the group successfully."}, status=status.HTTP_201_CREATED)
+
+# block user from group API
+@api_view(['POST'])
+def block_user(request):
+    serializer = BlockUserSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    admin_user_id = serializer.validated_data["admin_user_id"]
+    group_id = serializer.validated_data["group_id"]
+    blocked_user_id = serializer.validated_data["blocked_user_id"]
+
+    # Get the UserGroup entry for the blocked user
+    user_group = UserGroup.objects.get(user_id=blocked_user_id, group_id=group_id)
+
+    # Block the user
+    user_group.is_blocked = True
+    user_group.save()
+
+    return Response({"message": "User blocked successfully."}, status=status.HTTP_200_OK)
+
+# get blocked user list
+@api_view(['GET'])
+def get_blocked_users(request):
+    admin_id = request.query_params.get("admin_id")
+    group_id = request.query_params.get("group_id")
+
+    # Validate admin user and group
+    try:
+        admin = UserGroup.objects.get(user_id=admin_id, group_id=group_id, is_admin=True)
+    except UserGroup.DoesNotExist:
+        return Response({"error": "You are not an admin of this group."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Fetch blocked users in the group
+    blocked_users = UserGroup.objects.filter(group_id=group_id, is_blocked=True).select_related("user")
+    blocked_user_data = [{"user_id": u.user.id, "username": u.user.username} for u in blocked_users]
+
+    return Response({"blocked_users": blocked_user_data}, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+def unblock_user(request):
+    serializer = UnblockUserSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    admin_user_id = serializer.validated_data["admin_user_id"]
+    group_id = serializer.validated_data["group_id"]
+    unblocked_user_id = serializer.validated_data["unblocked_user_id"]
+
+    # Get the UserGroup entry for the unblocked user
+    user_group = UserGroup.objects.get(user_id=unblocked_user_id, group_id=group_id)
+
+    # Unblock the user
+    user_group.is_blocked = False
+    user_group.save()
+
+    return Response({"message": "User unblocked successfully."}, status=status.HTTP_200_OK)
+
+# write a post API
+@api_view(['POST'])
+def write_post(request):
+    serializer = WritePostSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = serializer.validated_data["user_id"]
+    group_id = serializer.validated_data["group_id"]
+    content = serializer.validated_data["content"]
+
+    user = User.objects.get(id=user_id)
+    group = Group.objects.get(id=group_id)
+
+    # Create the post
+    post = Post.objects.create(content=content, reaction_no=0, comment_no=0)
+
+    # Link the post to the user and group
+    UserPost.objects.create(user=user, group=group, post=post)
+
+    return Response({"message": "Post created successfully.", "post_id": post.id}, status=status.HTTP_201_CREATED)
+
+# delete a post
+@api_view(['DELETE'])
+def delete_post(request):
+    user_id = request.query_params.get("user_id")
+    post_id = request.query_params.get("post_id")
+    group_id = request.query_params.get("group_id")
+
+    # Validate inputs
+    try:
+        user = User.objects.get(id=user_id)
+        group = Group.objects.get(id=group_id)
+        post = Post.objects.get(id=post_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Group.DoesNotExist:
+        return Response({"error": "Group not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Post.DoesNotExist:
+        return Response({"error": "Post not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Check if the user is a member of the group
+    user_group = UserGroup.objects.filter(user=user, group=group).first()
+    if not user_group:
+        return Response({"error": "You are not a member of this group."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Check if the user is the post owner or an admin
+    user_post = UserPost.objects.filter(user=user, post=post, group=group).first()
+    is_admin = user_group.is_admin
+
+    if not (user_post or is_admin):
+        return Response({"error": "You are not authorized to delete this post."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Delete the post
+    post.delete()
+
+    return Response({"message": "Post deleted successfully."}, status=status.HTTP_200_OK)
+
+# like a post API
+@api_view(['POST'])
+def like_post(request):
+    user_id = request.data.get("user_id")
+    post_id = request.data.get("post_id")
+
+    # Validate inputs
+    try:
+        user = User.objects.get(id=user_id)
+        post = Post.objects.get(id=post_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Post.DoesNotExist:
+        return Response({"error": "Post not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Check if the user has already reacted to the post
+    if UserReact.objects.filter(user=user, post=post).exists():
+        return Response({"error": "You have already liked this post."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Create the reaction
+    UserReact.objects.create(user=user, post=post)
+
+    # Increment the reaction count for the post
+    post.reaction_no += 1
+    post.save()
+
+    return Response({"message": "Post liked successfully."}, status=status.HTTP_200_OK)
+
+#unlike a post
+@api_view(['POST'])
+def unlike_post(request):
+    user_id = request.data.get("user_id")
+    post_id = request.data.get("post_id")
+
+    # Validate inputs
+    try:
+        user = User.objects.get(id=user_id)
+        post = Post.objects.get(id=post_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Post.DoesNotExist:
+        return Response({"error": "Post not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Check if the user has already reacted to the post
+    reaction = UserReact.objects.filter(user=user, post=post).first()
+    if not reaction:
+        return Response({"error": "You have not liked this post."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Delete the reaction
+    reaction.delete()
+
+    # Decrement the reaction count for the post
+    post.reaction_no -= 1
+    post.save()
+
+    return Response({"message": "Post unliked successfully."}, status=status.HTTP_200_OK)
+
+# comment in a post API
+@api_view(['POST'])
+def comment_on_post(request):
+    serializer = CommentPostSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = serializer.validated_data["user_id"]
+    post_id = serializer.validated_data["post_id"]
+    content = serializer.validated_data["content"]
+
+    # Validate user and post
+    try:
+        user = User.objects.get(id=user_id)
+        post = Post.objects.get(id=post_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Post.DoesNotExist:
+        return Response({"error": "Post not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Create the comment
+    comment = UserComment.objects.create(user=user, post=post, content=content)
+
+    # Increment the comment count for the post
+    post.comment_no += 1
+    post.save()
+
+    return Response({"message": "Comment added successfully.", "comment_id": comment.id}, status=status.HTTP_201_CREATED)
+
+@api_view(['DELETE'])
+def delete_comment(request):
+    user_id = request.query_params.get("user_id")
+    comment_id = request.query_params.get("comment_id")
+
+    # Validate inputs
+    try:
+        user = User.objects.get(id=user_id)
+        comment = UserComment.objects.get(id=comment_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except UserComment.DoesNotExist:
+        return Response({"error": "Comment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Ensure the user owns the comment
+    if comment.user != user:
+        return Response({"error": "You are not authorized to delete this comment."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Decrement the comment count for the post
+    post = comment.post
+    post.comment_no -= 1
+    post.save()
+
+    # Delete the comment
+    comment.delete()
+
+    return Response({"message": "Comment deleted successfully."}, status=status.HTTP_200_OK)
+
+@api_view(['PUT'])
+def edit_comment(request):
+    serializer = EditCommentSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    user_id = serializer.validated_data["user_id"]
+    comment_id = serializer.validated_data["comment_id"]
+    new_content = serializer.validated_data["content"]
+
+    # Validate inputs
+    try:
+        user = User.objects.get(id=user_id)
+        comment = UserComment.objects.get(id=comment_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except UserComment.DoesNotExist:
+        return Response({"error": "Comment not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Ensure the user owns the comment
+    if comment.user != user:
+        return Response({"error": "You are not authorized to edit this comment."}, status=status.HTTP_403_FORBIDDEN)
+
+    # Update the comment content
+    comment.content = new_content
+    comment.save()
+
+    return Response({"message": "Comment updated successfully."}, status=status.HTTP_200_OK)
+
+# get group post API
+@api_view(['GET'])
+def get_group_posts(request, group_id):
+    # Validate the group exists
+    try:
+        group = Group.objects.get(id=group_id)
+    except Group.DoesNotExist:
+        return Response({"error": "Group not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Fetch all posts in the group
+    posts = Post.objects.filter(userpost__group=group).order_by('-id')  # Latest posts first
+
+    # Serialize the data
+    post_data = []
+    for post in posts:
+        comments = UserComment.objects.filter(post=post).order_by('add_date')
+        reactions = UserReact.objects.filter(post=post).count()
+
+        post_info = {
+            "post_id": post.id,
+            "content": post.content,
+            "reaction_no": reactions,
+            "comment_no": post.comment_no,
+            "comments": [
+                {
+                    "comment_id": comment.id,
+                    "username": comment.user.username,
+                    "content": comment.content,
+                    "add_date": comment.add_date
+                }
+                for comment in comments
+            ]
+        }
+        post_data.append(post_info)
+
+    return Response({"posts": post_data}, status=status.HTTP_200_OK)
+
+# get user group post API
+@api_view(['GET'])
+def get_user_group_posts(request, user_id):
+    # Validate the user exists
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Fetch all groups the user is a member of (and not blocked)
+    user_groups = UserGroup.objects.filter(user=user, is_blocked=False).values_list('group', flat=True)
+
+    # Fetch all posts in those groups
+    posts = Post.objects.filter(userpost__group__in=user_groups).order_by('-id')  # Latest posts first
+
+    # Serialize the data
+    post_data = []
+    for post in posts:
+        comments = UserComment.objects.filter(post=post).order_by('add_date')
+        reactions = UserReact.objects.filter(post=post).count()
+
+        post_info = {
+            "post_id": post.id,
+            "content": post.content,
+            "reaction_no": reactions,
+            "comment_no": post.comment_no,
+            "comments": [
+                {
+                    "comment_id": comment.id,
+                    "username": comment.user.username,
+                    "content": comment.content,
+                    "add_date": comment.add_date
+                }
+                for comment in comments
+            ]
+        }
+        post_data.append(post_info)
+
+    return Response({"posts": post_data}, status=status.HTTP_200_OK)
+
+# leave a group
+@api_view(['POST'])
+def leave_group(request):
+    user_id = request.data.get("user_id")
+    group_id = request.data.get("group_id")
+
+    # Validate inputs
+    try:
+        user = User.objects.get(id=user_id)
+        group = Group.objects.get(id=group_id)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Group.DoesNotExist:
+        return Response({"error": "Group not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    # Check if the user is a member of the group
+    user_group = UserGroup.objects.filter(user=user, group=group).first()
+    if not user_group:
+        return Response({"error": "You are not a member of this group."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Prevent admins from leaving their own group
+    if user_group.is_admin:
+        return Response({"error": "Admins cannot leave their own group. Transfer ownership or delete the group."},
+                        status=status.HTTP_403_FORBIDDEN)
+
+    # Remove the user from the group
+    user_group.delete()
+
+    return Response({"message": "You have successfully left the group."}, status=status.HTTP_200_OK)
 
 
 

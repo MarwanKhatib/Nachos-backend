@@ -68,3 +68,4 @@ class CustomUserManager(BaseUserManager):
         )
 
         return user
+
