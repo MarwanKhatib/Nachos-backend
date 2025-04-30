@@ -43,9 +43,11 @@ urlpatterns = [
     path("like-post/", like_post, name="like_post"),
     path("unlike-post/", unlike_post, name="unlike_post"),
     path("comment-post/", comment_on_post, name="comment_post"),
+    path("edit-comment/" , edit_comment , name = "edit_comment") ,
     path("delete-comment/", delete_comment, name="delete_comment"),
     path("group-posts/<int:group_id>/", get_group_posts, name="get_group_posts"),
     path("user-group-posts/<int:user_id>/", get_user_group_posts, name="get_user_group_posts"),
+    
     path("leave-group/", leave_group, name="leave_group"),
 
 ]

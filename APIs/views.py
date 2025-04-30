@@ -579,6 +579,17 @@ def like_post(request):
     except Post.DoesNotExist:
         return Response({"error": "Post not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # Check if the post belongs to a group
+    try:
+        user_post = UserPost.objects.get(post=post)  # Get the group associated with the post
+        group = user_post.group
+    except UserPost.DoesNotExist:
+        return Response({"error": "This post does not belong to any group."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Check if the user is a member of the group
+    if not UserGroup.objects.filter(user=user, group=group, is_blocked=False).exists():
+        return Response({"error": "You are not a member of the group where this post was made."}, status=status.HTTP_403_FORBIDDEN)
+
     # Check if the user has already reacted to the post
     if UserReact.objects.filter(user=user, post=post).exists():
         return Response({"error": "You have already liked this post."}, status=status.HTTP_400_BAD_REQUEST)
@@ -641,6 +652,13 @@ def comment_on_post(request):
     except Post.DoesNotExist:
         return Response({"error": "Post not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    try:
+        user_post = UserPost.objects.get(post=post)  # Get the group associated with the post
+        group = user_post.group
+    except UserPost.DoesNotExist:
+        return Response({"error": "This post does not belong to any group."}, status=status.HTTP_400_BAD_REQUEST)
+    if not UserGroup.objects.filter(user=user, group=group, is_blocked=False).exists():
+        return Response({"error": "You are not a member of the group where this post was made."}, status=status.HTTP_403_FORBIDDEN)
     # Create the comment
     comment = UserComment.objects.create(user=user, post=post, content=content)
 
@@ -762,6 +780,13 @@ def get_user_group_posts(request, user_id):
     # Serialize the data
     post_data = []
     for post in posts:
+        # Get the group associated with the post
+        try:
+            user_post = UserPost.objects.get(post=post)
+            group_name = user_post.group.name
+        except UserPost.DoesNotExist:
+            group_name = None  # In case the post is not linked to any group
+
         comments = UserComment.objects.filter(post=post).order_by('add_date')
         reactions = UserReact.objects.filter(post=post).count()
 
@@ -770,6 +795,7 @@ def get_user_group_posts(request, user_id):
             "content": post.content,
             "reaction_no": reactions,
             "comment_no": post.comment_no,
+            "group_name": group_name,  # Include the group name here
             "comments": [
                 {
                     "comment_id": comment.id,
@@ -783,7 +809,6 @@ def get_user_group_posts(request, user_id):
         post_data.append(post_info)
 
     return Response({"posts": post_data}, status=status.HTTP_200_OK)
-
 # leave a group
 @api_view(['POST'])
 def leave_group(request):
