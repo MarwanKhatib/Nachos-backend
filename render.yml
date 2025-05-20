@@ -13,6 +13,10 @@ services:
         value: redis://red-d0lj2gnfte5s739isplg:6379
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
 
   - type: worker
     name: celery-worker
@@ -26,3 +30,24 @@ services:
         value: redis://red-d0lj2gnfte5s739isplg:6379
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+
+  - type: worker
+    name: celery-beat
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A backend beat -l info
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: backend.settings
+      - key: REDIS_URL
+        value: redis://red-d0lj2gnfte5s739isplg:6379
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
