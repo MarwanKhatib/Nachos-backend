@@ -22,12 +22,6 @@ class RegisterUserSerializer(serializers.Serializer):
         birth_date = validated_data["birth_date"]
         first_name = validated_data["first_name"]
         last_name = validated_data["last_name"]
-        
-        # Set default values for normal users
-        is_staff = False
-        is_superuser = False
-        is_active = False
-        is_email_verified = False
 
         user = User.objects.register_user(
             email=email,
@@ -35,11 +29,7 @@ class RegisterUserSerializer(serializers.Serializer):
             password=password,
             birth_date=birth_date,
             first_name=first_name,
-            last_name=last_name,
-            is_staff=is_staff,
-            is_superuser=is_superuser,
-            is_active=is_active,
-            is_email_verified=is_email_verified
+            last_name=last_name
         )
         return user
 

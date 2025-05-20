@@ -34,7 +34,7 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, username, password, **extra_fields)
 
-    def register_user(self, email, username, password, birth_date):
+    def register_user(self, email, username, password, birth_date, first_name=None, last_name=None, **extra_fields):
         if not email:
             raise ValueError("The Email must be set")
         email = self.normalize_email(email)
@@ -44,13 +44,21 @@ class CustomUserManager(BaseUserManager):
         if birth_date > min_birth_date:
             raise ValueError("You must be at least 16 years old to register.")
 
+        # Set default values for new users
+        extra_fields.setdefault('is_active', False)
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
+        extra_fields.setdefault('is_email_verified', False)
+
         # Creating user
         user = self.create_user(
             email=email,
             username=username,
             password=password,
             birth_date=birth_date,
-            is_active=False,
+            first_name=first_name,
+            last_name=last_name,
+            **extra_fields
         )
 
         # Generate a 6-digit verification key
