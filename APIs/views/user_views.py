@@ -190,9 +190,9 @@ class UserViewSet(ViewSet):
         operation_description="Login user and get JWT tokens",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
-            required=['username', 'password'],
+            required=['email', 'password'],
             properties={
-                'username': openapi.Schema(type=openapi.TYPE_STRING),
+                'email': openapi.Schema(type=openapi.TYPE_STRING, format='email'),
                 'password': openapi.Schema(type=openapi.TYPE_STRING, format='password')
             }
         ),
@@ -202,14 +202,22 @@ class UserViewSet(ViewSet):
                 schema=openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
-                        'access': openapi.Schema(type=openapi.TYPE_STRING),
-                        'refresh': openapi.Schema(type=openapi.TYPE_STRING),
-                        'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
-                        'username': openapi.Schema(type=openapi.TYPE_STRING),
-                        'email': openapi.Schema(type=openapi.TYPE_STRING)
+                        'status': openapi.Schema(type=openapi.TYPE_STRING),
+                        'message': openapi.Schema(type=openapi.TYPE_STRING),
+                        'data': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'access': openapi.Schema(type=openapi.TYPE_STRING),
+                                'refresh': openapi.Schema(type=openapi.TYPE_STRING),
+                                'user_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'username': openapi.Schema(type=openapi.TYPE_STRING),
+                                'email': openapi.Schema(type=openapi.TYPE_STRING)
+                            }
+                        )
                     }
                 )
             ),
+            400: "Invalid input",
             401: "Invalid credentials",
             500: "Internal Server Error"
         }
@@ -217,11 +225,17 @@ class UserViewSet(ViewSet):
     @action(detail=False, methods=['post'])
     def login(self, request):
         """Login user and get JWT tokens"""
-        # Add logging here to see if the view is reached
         logger = logging.getLogger(__name__)
         logger.info("Login view reached.")
 
         try:
+            # Validate required fields
+            if not request.data.get('email') or not request.data.get('password'):
+                return self._error_response(
+                    message="Email and password are required",
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
             serializer = EmailTokenObtainPairSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
@@ -229,7 +243,14 @@ class UserViewSet(ViewSet):
                 data=data,
                 message="Login successful"
             )
+        except ValidationError as e:
+            logger.error(f"Validation error in login: {str(e)}")
+            return self._error_response(
+                message=str(e),
+                status_code=status.HTTP_400_BAD_REQUEST
+            )
         except TokenError:
+            logger.error("Invalid credentials in login")
             return self._error_response(
                 message="Invalid credentials",
                 status_code=status.HTTP_401_UNAUTHORIZED
@@ -630,8 +651,13 @@ class UserViewSet(ViewSet):
 
             email = serializer.validated_data['email']
 
-            # User lookup and verification status check is already done in serializer validation
-            user = User.objects.get(email=email)
+            try:
+                user = User.objects.get(email=email)
+            except ObjectDoesNotExist:
+                return self._error_response(
+                    message="User not found.",
+                    status_code=status.HTTP_404_NOT_FOUND
+                )
             
             # Use the existing auth_key
             auth_key = user.auth_key
@@ -643,16 +669,11 @@ class UserViewSet(ViewSet):
                 )
 
             # Queue the email sending task with the existing auth_key
-            # Use the Celery app instance for sending tasks
-            from backend.celery import app # Import app here to avoid circular imports at the top
+            from backend.celery import app
 
             print(f"Queueing re-verification email for {email}")
             try:
                 result = app.send_task('APIs.tasks.send_verification_email', args=[email, auth_key])
-                # Optionally wait for a short period or just return success immediately
-                # For resend, immediate success response is probably better UX
-                # task_result = result.get(timeout=10) # Optional: wait briefly
-                
                 return self._success_response(
                     message="Verification email queued for resending.",
                     data={"task_id": result.id},
@@ -660,21 +681,12 @@ class UserViewSet(ViewSet):
                 )
             except Exception as e:
                 print(f"Celery task queuing failed for resend: {str(e)}")
-                # Consider fallback to direct send here too if critical
-                # if send_verification_email(email, auth_key): ...
                 return self._error_response(
                     message=f"Failed to queue verification email resend task: {str(e)}",
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
 
-        except User.DoesNotExist:
-             # This should ideally be caught by serializer validation, but as a safeguard:
-            return self._error_response(
-                message="User not found.",
-                status_code=status.HTTP_404_NOT_FOUND
-            )
         except ValidationError as e:
-             # Catch serializer validation errors specifically
             return self._error_response(
                 message="Invalid data provided.",
                 errors=e.detail,
