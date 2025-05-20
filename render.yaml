@@ -1,45 +1,11 @@
 services:
   - type: web
-    name: django-app
+    name: nachos-backend
     env: python
     buildCommand: |
       pip install -r requirements.txt
       python manage.py collectstatic --noinput
-    startCommand: gunicorn backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2
-    envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: backend.settings
-      - key: REDIS_URL
-        value: redis://red-d0lj2gnfte5s739isplg:6379
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
-
-  - type: worker
-    name: celery-worker
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A backend worker -l info --concurrency=2
-    envVars:
-      - key: DJANGO_SETTINGS_MODULE
-        value: backend.settings
-      - key: REDIS_URL
-        value: redis://red-d0lj2gnfte5s739isplg:6379
-      - key: PYTHONUNBUFFERED
-        value: "1"
-      - key: EMAIL_HOST_USER
-        sync: false
-      - key: EMAIL_HOST_PASSWORD
-        sync: false
-
-  - type: worker
-    name: celery-beat
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A backend beat -l info
+    startCommand: chmod +x start.sh && ./start.sh
     envVars:
       - key: DJANGO_SETTINGS_MODULE
         value: backend.settings
