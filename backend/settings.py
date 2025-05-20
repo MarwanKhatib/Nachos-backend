@@ -159,3 +159,14 @@ SIMPLE_JWT = {
     ),  # Access token expires after 30 minutes
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),  # Refresh token expires after 1 day
 }
+
+# Redis Configuration
+REDIS_URL = config('REDIS_URL', default='redis://127.0.0.1:6379/0')
+
+# Celery Configuration
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
