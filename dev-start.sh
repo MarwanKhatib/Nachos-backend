@@ -10,5 +10,5 @@ celery -A backend worker -l info --concurrency=2 &
 celery -A backend beat -l info &
 
 # Start Django with Gunicorn
-gunicorn backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2
-# gunicorn backend.wsgi:application --bind 0.0.0.0:3000 --workers 2 --threads 2
+# gunicorn backend.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 2
+gunicorn backend.wsgi:application --bind 0.0.0.0:3000 --workers 2 --threads 2
