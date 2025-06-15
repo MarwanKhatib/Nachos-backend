@@ -1,45 +1,50 @@
-from .user_serializers import (
-    RegisterUserSerializer,
-    VerifyEmailSerializer,
-    CustomTokenObtainPairSerializer,
-    UserGenresSerializer,
-    SelectGenresSerializer
-)
-from .movie_serializers import (
-    PairStructuresSerializer,
-    MovieSerializer,
-    MovieInfosSerializer,
-    WatchlistItemSerializer,
-    RateMovieSerializer,
-    MovieCommentSerializer
-)
+"""
+This module contains serializers for the Nachos backend API.
+It includes serializers for user management, movie operations, and group functionality.
+"""
+
 from .group_serializers import (
-    CreateGroupSerializer,
-    JoinGroupSerializer,
     BlockUserSerializer,
+    CommentPostSerializer,
+    CreateGroupSerializer,
+    EditCommentSerializer,
+    JoinGroupSerializer,
     UnblockUserSerializer,
     WritePostSerializer,
-    CommentPostSerializer,
-    EditCommentSerializer
+)
+from .movie_serializers import (
+    MovieCommentSerializer,
+    MovieInfosSerializer,
+    MovieSerializer,
+    PairStructuresSerializer,
+    RateMovieSerializer,
+    WatchlistItemSerializer,
+)
+from .user_serializers import (
+    CustomTokenObtainPairSerializer,
+    RegisterUserSerializer,
+    SelectGenresSerializer,
+    UserGenresSerializer,
+    VerifyEmailSerializer,
 )
 
 __all__ = [
-    'RegisterUserSerializer',
-    'VerifyEmailSerializer',
-    'CustomTokenObtainPairSerializer',
-    'UserGenresSerializer',
-    'SelectGenresSerializer',
-    'PairStructuresSerializer',
-    'MovieSerializer',
-    'MovieInfosSerializer',
-    'WatchlistItemSerializer',
-    'RateMovieSerializer',
-    'MovieCommentSerializer',
-    'CreateGroupSerializer',
-    'JoinGroupSerializer',
-    'BlockUserSerializer',
-    'UnblockUserSerializer',
-    'WritePostSerializer',
-    'CommentPostSerializer',
-    'EditCommentSerializer'
+    "RegisterUserSerializer",
+    "VerifyEmailSerializer",
+    "CustomTokenObtainPairSerializer",
+    "UserGenresSerializer",
+    "SelectGenresSerializer",
+    "PairStructuresSerializer",
+    "MovieSerializer",
+    "MovieInfosSerializer",
+    "WatchlistItemSerializer",
+    "RateMovieSerializer",
+    "MovieCommentSerializer",
+    "CreateGroupSerializer",
+    "JoinGroupSerializer",
+    "BlockUserSerializer",
+    "UnblockUserSerializer",
+    "WritePostSerializer",
+    "CommentPostSerializer",
+    "EditCommentSerializer",
 ]
