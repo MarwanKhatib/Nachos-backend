@@ -6,12 +6,12 @@ from rest_framework.validators import UniqueValidator
 
 
 class RegisterUserSerializer(serializers.Serializer):
-    email = serializers.EmailField(validators=[UniqueValidator(queryset=User.objects.all(), message="A user with this email already exists.")])
-    username = serializers.CharField(validators=[UniqueValidator(queryset=User.objects.all(), message="A user with this username already exists.")])
-    password = serializers.CharField(write_only=True)
-    birth_date = serializers.DateField()
-    first_name = serializers.CharField(required=True)
-    last_name = serializers.CharField(required=True)
+    email = serializers.EmailField(validators=[UniqueValidator(queryset=User.objects.all(), message="A user with this email already exists.")], required=False)
+    username = serializers.CharField(validators=[UniqueValidator(queryset=User.objects.all(), message="A user with this username already exists.")], required=False)
+    password = serializers.CharField(write_only=True, required=False)
+    birth_date = serializers.DateField(required=False)
+    first_name = serializers.CharField(required=False)
+    last_name = serializers.CharField(required=False)
     is_active = serializers.BooleanField(required=False, default=False)
     is_email_verified = serializers.BooleanField(required=False, default=False)
 
@@ -32,6 +32,16 @@ class RegisterUserSerializer(serializers.Serializer):
             last_name=last_name
         )
         return user
+        
+    def update(self, instance, validated_data):
+        # Update the user instance with validated data
+        for attr, value in validated_data.items():
+            if attr == 'password':
+                instance.set_password(value)
+            else:
+                setattr(instance, attr, value)
+        instance.save()
+        return instance
 
 class VerifyEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()

@@ -404,10 +404,19 @@ class UserViewSet(ViewSet):
             RuntimeError: If there's an error retrieving the data
         """
         try:
-            if not self._check_user_permission(request, pk):
+            # Validate that pk is an integer
+            try:
+                user_id = int(pk)
+            except (ValueError, TypeError):
+                return self._error_response(
+                    message="Invalid user ID format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+                
+            if not self._check_user_permission(request, user_id):
                 raise PermissionDenied("Insufficient permissions")
 
-            user = User.objects.get(pk=pk)
+            user = User.objects.get(pk=user_id)
             serializer = RegisterUserSerializer(user)
             return self._success_response(
                 data=serializer.data, message="User details retrieved successfully"
@@ -455,26 +464,46 @@ class UserViewSet(ViewSet):
             RuntimeError: If there's an error during update
         """
         try:
-            if not self._check_user_permission(request, pk):
+            # Validate that pk is an integer
+            try:
+                user_id = int(pk)
+            except (ValueError, TypeError):
+                return self._error_response(
+                    message="Invalid user ID format",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+                
+            if not self._check_user_permission(request, user_id):
                 raise PermissionDenied("Insufficient permissions")
 
-            user = User.objects.get(pk=pk)
+            user = User.objects.get(pk=user_id)
 
             # Only superuser can modify admin status
-            if not self._check_superuser_permission(request):
-                if "is_staff" in request.data or "is_superuser" in request.data:
+            if "is_staff" in request.data or "is_superuser" in request.data:
+                if not request.user.is_superuser:
                     raise PermissionDenied("Insufficient permissions")
 
             serializer = RegisterUserSerializer(user, data=request.data, partial=True)
             if serializer.is_valid():
-                serializer.save()
-                return self._success_response(
-                    data=serializer.data,
-                    message="User information updated successfully",
+                try:
+                    serializer.save()
+                    return self._success_response(
+                        data=serializer.data,
+                        message="User information updated successfully",
+                    )
+                except Exception as e:
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Error saving user {pk}: {str(e)}")
+                    return self._error_response(
+                        message=f"Error saving user: {str(e)}",
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+            else:
+                logger = logging.getLogger(__name__)
+                logger.error(f"Validation error for user {pk}: {serializer.errors}")
+                return self._error_response(
+                    message="Update failed", errors=serializer.errors
                 )
-            return self._error_response(
-                message="Update failed", errors=serializer.errors
-            )
         except ObjectDoesNotExist:
             return self._error_response(
                 message="User not found", status_code=status.HTTP_404_NOT_FOUND
@@ -483,9 +512,11 @@ class UserViewSet(ViewSet):
             return self._error_response(
                 message=str(e), status_code=status.HTTP_403_FORBIDDEN
             )
-        except (RuntimeError, ValueError, AttributeError, IntegrityError):
+        except (RuntimeError, ValueError, AttributeError, IntegrityError) as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error updating user {pk}: {str(e)}")
             return self._error_response(
-                message="An error occurred",
+                message=f"An error occurred: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
