@@ -216,3 +216,11 @@ class MovieCommentSerializer(serializers.ModelSerializer):
         if not value.strip():
             raise serializers.ValidationError("Comment content cannot be empty")
         return value.strip()
+
+
+class AddToWatchlistSerializer(serializers.Serializer):
+    """
+    Serializer for adding a movie to a user's watchlist.
+    """
+
+    movie_id = serializers.IntegerField(min_value=1)

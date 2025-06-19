@@ -13,6 +13,7 @@ from .group_serializers import (
     WritePostSerializer,
 )
 from .movie_serializers import (
+    AddToWatchlistSerializer,
     MovieCommentSerializer,
     MovieInfosSerializer,
     MovieSerializer,
@@ -47,4 +48,5 @@ __all__ = [
     "WritePostSerializer",
     "CommentPostSerializer",
     "EditCommentSerializer",
+    "AddToWatchlistSerializer",
 ]

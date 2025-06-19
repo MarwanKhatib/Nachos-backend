@@ -1,13 +1,33 @@
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
-from APIs.models import User,Genre
 from rest_framework.validators import UniqueValidator
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenRefreshSerializer,
+)
+
+from APIs.models import Genre, User
 
 
 class RegisterUserSerializer(serializers.Serializer):
-    email = serializers.EmailField(validators=[UniqueValidator(queryset=User.objects.all(), message="A user with this email already exists.")], required=False)
-    username = serializers.CharField(validators=[UniqueValidator(queryset=User.objects.all(), message="A user with this username already exists.")], required=False)
+    email = serializers.EmailField(
+        validators=[
+            UniqueValidator(
+                queryset=User.objects.all(),
+                message="A user with this email already exists.",
+            )
+        ],
+        required=False,
+    )
+    username = serializers.CharField(
+        validators=[
+            UniqueValidator(
+                queryset=User.objects.all(),
+                message="A user with this username already exists.",
+            )
+        ],
+        required=False,
+    )
     password = serializers.CharField(write_only=True, required=False)
     birth_date = serializers.DateField(required=False)
     first_name = serializers.CharField(required=False)
@@ -29,19 +49,20 @@ class RegisterUserSerializer(serializers.Serializer):
             password=password,
             birth_date=birth_date,
             first_name=first_name,
-            last_name=last_name
+            last_name=last_name,
         )
         return user
-        
+
     def update(self, instance, validated_data):
         # Update the user instance with validated data
         for attr, value in validated_data.items():
-            if attr == 'password':
+            if attr == "password":
                 instance.set_password(value)
             else:
                 setattr(instance, attr, value)
         instance.save()
         return instance
+
 
 class VerifyEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -59,35 +80,29 @@ class VerifyEmailSerializer(serializers.Serializer):
             )
 
         if user.is_email_verified:
-            raise serializers.ValidationError(
-                {"email": "Email is already verified."}
-            )
+            raise serializers.ValidationError({"email": "Email is already verified."})
 
         if not user.auth_key:
             raise serializers.ValidationError(
-                {"key": "No verification key found. Please request a new verification email."}
+                {
+                    "key": "No verification key found. Please request a new verification email."
+                }
             )
 
         # Store the user in the validated data for use in the view
-        data['user'] = user
+        data["user"] = user
         return data
 
-class SelectGenresSerializer(serializers.Serializer):
-    user_id = serializers.IntegerField()
-    genre_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
 
-    def validate_user_id(self, value):
-        try:
-            user = User.objects.get(id=value)
-        except User.DoesNotExist:
-            raise serializers.ValidationError("User does not exist.")
-        return value
+class SelectGenresSerializer(serializers.Serializer):
+    genre_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
 
     def validate_genre_ids(self, value):
         valid_genres = Genre.objects.filter(id__in=value)
         if len(valid_genres) != len(value):
             raise serializers.ValidationError("One or more genre IDs are invalid.")
         return value
+
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
@@ -96,8 +111,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise ValidationError("Email is not verified.")
         return data
 
+
 class UserGenresSerializer(serializers.Serializer):
     genres = serializers.ListField(child=serializers.CharField())
+
 
 class ResendVerificationEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
@@ -111,24 +128,25 @@ class ResendVerificationEmailSerializer(serializers.Serializer):
         except User.DoesNotExist:
             raise serializers.ValidationError("User with this email does not exist.")
 
+
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
-    username_field = 'email'
+    username_field = "email"
     email = serializers.EmailField(required=True)
     password = serializers.CharField(required=True, write_only=True)
 
     def validate(self, attrs):
         try:
-            email = attrs.get('email')
-            password = attrs.get('password')
+            email = attrs.get("email")
+            password = attrs.get("password")
 
             if not email or not password:
-                raise ValidationError('Email and password are required.')
+                raise ValidationError("Email and password are required.")
 
             # Try to authenticate using email
             try:
                 user = User.objects.get(email=email)
             except User.DoesNotExist:
-                raise ValidationError('No user found with this email.')
+                raise ValidationError("No user found with this email.")
 
             # Authenticate the user with the password
             if user.check_password(password):
@@ -139,18 +157,18 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
                 # If authentication is successful, get the tokens
                 refresh = self.get_token(user)
                 data = {
-                    'refresh': str(refresh),
-                    'access': str(refresh.access_token),
+                    "refresh": str(refresh),
+                    "access": str(refresh.access_token),
                 }
 
                 # Include user details in the response
-                data['user_id'] = user.id
-                data['username'] = user.username
-                data['email'] = user.email
+                data["user_id"] = user.id
+                data["username"] = user.username
+                data["email"] = user.email
 
                 return data
             else:
-                raise ValidationError('Incorrect password.')
+                raise ValidationError("Incorrect password.")
         except Exception as e:
             # Log the exception for debugging
             print(f"Error in EmailTokenObtainPairSerializer validation: {e}")
