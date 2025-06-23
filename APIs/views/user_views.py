@@ -9,6 +9,7 @@ custom permission classes for staff and superuser operations.
 """
 
 import logging
+import threading
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ObjectDoesNotExist
@@ -24,6 +25,8 @@ from rest_framework.viewsets import ViewSet
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from django.shortcuts import get_object_or_404
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from APIs.models.user_model import User
 from APIs.serializers.user_serializers import (
@@ -32,7 +35,7 @@ from APIs.serializers.user_serializers import (
     ResendVerificationEmailSerializer,
     VerifyEmailSerializer,
 )
-from APIs.tasks import create_user_suggestions, test_celery
+from APIs.tasks import create_user_suggestions, send_verification_email
 
 
 class IsSuperUser(permissions.BasePermission):
@@ -75,53 +78,90 @@ class UserViewSet(ViewSet):
     authentication_classes = [JWTAuthentication]
 
     def get_permissions(self):
+        """
+        Determines the permissions required for each action.
+
+        - 'create_user', 'verify', 'login', 'refresh_token', 'resend_verification_email': No authentication required.
+        - 'all_users', 'create_superuser': Only superusers can access.
+        - 'create_staff': Staff or superusers can access.
+        - 'retrieve', 'update', 'destroy', 'change_password':
+            - If a 'pk' (user ID) is provided in the URL, it's an admin action, requiring superuser permissions.
+            - If no 'pk' is provided, it's a self-service action for the authenticated user.
+        - Other actions: Require authentication.
+        """
         if self.action in [
             "create_user",
             "verify",
             "login",
             "refresh_token",
-            "test_celery",
             "resend_verification_email",
         ]:
-            return [AllowAny()]  # No authentication needed for these endpoints
-        elif self.action in ["all_users", "destroy", "create_superuser"]:
-            return [IsSuperUser()]  # Only superuser can access these
-        elif self.action in ["create_staff"]:
-            return [IsStaffOrSuperUser()]  # Staff or superuser can access
+            return [AllowAny()]
+        elif self.action in ["all_users", "create_superuser"]:
+            return [IsSuperUser()]
+        elif self.action == "create_staff":
+            return [IsStaffOrSuperUser()]
+        elif self.action in ["retrieve", "update", "destroy", "change_password"]:
+            if self.kwargs.get('pk'):
+                return [IsSuperUser()]
+            else:
+                return [IsAuthenticated()]
         else:
-            return [IsAuthenticated()]  # All other endpoints need authentication
-
-    def _check_user_permission(self, request, user_id):
-        """Check if user has permission to access/modify the resource"""
-        if request.user.is_superuser:
-            return True
-        if request.user.is_staff:
-            return True
-        return request.user.id == user_id
+            return [IsAuthenticated()]
 
     def _check_superuser_permission(self, request):
-        """Check if user is superuser"""
+        """
+        Checks if the requesting user has superuser privileges.
+
+        Raises:
+            PermissionDenied: If the user is not a superuser.
+        """
         if not request.user.is_superuser:
-            raise PermissionDenied("Insufficient permissions")
+            raise PermissionDenied("Insufficient permissions.")
         return True
 
     def _check_staff_permission(self, request):
-        """Check if user is staff or superuser"""
+        """
+        Checks if the requesting user has staff or superuser privileges.
+
+        Raises:
+            PermissionDenied: If the user is neither staff nor superuser.
+        """
         if not (request.user.is_staff or request.user.is_superuser):
-            raise PermissionDenied("Insufficient permissions")
+            raise PermissionDenied("Insufficient permissions.")
         return True
 
     def _success_response(
         self, data=None, message=None, status_code=status.HTTP_200_OK
     ):
-        """Standardized success response format"""
+        """
+        Standardized success response format.
+
+        Args:
+            data (dict, optional): The data to be returned. Defaults to None.
+            message (str, optional): A success message. Defaults to None.
+            status_code (int, optional): HTTP status code. Defaults to HTTP_200_OK.
+
+        Returns:
+            Response: A DRF Response object.
+        """
         response_data = {"status": "success", "message": message, "data": data}
         return Response(response_data, status=status_code)
 
     def _error_response(
         self, message, errors=None, status_code=status.HTTP_400_BAD_REQUEST
     ):
-        """Standardized error response format"""
+        """
+        Standardized error response format.
+
+        Args:
+            message (str): An error message.
+            errors (dict, optional): A dictionary of validation errors. Defaults to None.
+            status_code (int, optional): HTTP status code. Defaults to HTTP_400_BAD_REQUEST.
+
+        Returns:
+            Response: A DRF Response object.
+        """
         response_data = {"status": "error", "message": message, "errors": errors}
         return Response(response_data, status=status_code)
 
@@ -138,14 +178,13 @@ class UserViewSet(ViewSet):
         },
     )
     def create_user(self, request):
-        """Create a normal user - no special permissions"""
-        try:
-            # Ensure no admin privileges are set
-            request.data["is_staff"] = False
-            request.data["is_superuser"] = False
-            request.data["is_active"] = False
-            request.data["is_email_verified"] = False
+        """
+        Registers a new normal user.
 
+        Ensures that no admin privileges are set during registration.
+        Sends a verification email upon successful registration.
+        """
+        try:
             serializer = RegisterUserSerializer(data=request.data)
             if serializer.is_valid():
                 serializer.save()
@@ -160,12 +199,12 @@ class UserViewSet(ViewSet):
             error_message = str(e)
             if "email" in error_message.lower():
                 return self._error_response(
-                    message="A user with this email already exists",
+                    message="A user with this email already exists.",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
             elif "username" in error_message.lower():
                 return self._error_response(
-                    message="A user with this username already exists",
+                    message="A user with this username already exists.",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
             else:
@@ -174,14 +213,14 @@ class UserViewSet(ViewSet):
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
         except (RuntimeError, ValueError, AttributeError) as e:
-            print(f"Error in registration: {str(e)}")
+            logging.error(f"Error in registration: {str(e)}", exc_info=True)
             return self._error_response(
-                message="An error occurred during registration",
+                message="An error occurred during registration.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @swagger_auto_schema(
-        operation_description="Verify user email with verification code",
+        operation_description="Verify user email with verification code (returns JWT tokens)",
         request_body=VerifyEmailSerializer,
         responses={
             200: "Email verified successfully",
@@ -191,60 +230,75 @@ class UserViewSet(ViewSet):
     )
     @action(detail=False, methods=["post"])
     def verify(self, request):
-        """Verify user's email address using verification code.
-
-        This endpoint verifies a user's email address by validating the verification code
-        sent to their email during registration.
-
-        Args:
-            request: HTTP request object containing verification data (email and key)
-
-        Returns:
-            Response object with:
-                - Success message if verification successful
-                - Error message and appropriate status code on failure
-
-        Raises:
-            ValidationError: If verification data is invalid
-            ObjectDoesNotExist: If user not found
-            RuntimeError: If there's an error during verification
+        """
+        Verifies a user's email address using a verification code.
+        Upon successful verification, generates and returns JWT tokens,
+        and initiates asynchronous movie suggestion creation.
         """
         try:
             serializer = VerifyEmailSerializer(data=request.data)
             if not serializer.is_valid():
                 return self._error_response(
-                    message="Verification failed",
+                    message="Verification failed.",
                     errors=serializer.errors,
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            user = serializer.validated_data["user"]
-            key = serializer.validated_data["key"]
-
-            # Verify the email
-            if not user.verify_email(key):
+            validated_data = serializer.validated_data
+            if not isinstance(validated_data, dict):
                 return self._error_response(
-                    message="Invalid verification key",
+                    message="Invalid validated data format from serializer.",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            user = validated_data.get("user")
+            key = validated_data.get("key")
+
+            if not user or not key:
+                return self._error_response(
+                    message="Verification data missing.",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Create movie suggestions asynchronously
-            create_user_suggestions.delay(user.id)
+            if not user.verify_email(key):
+                return self._error_response(
+                    message="Invalid verification key.",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+
+            threading.Thread(target=create_user_suggestions, args=(user.id,)).start()
+
+            # Generate tokens directly for the user (no password required)
+            refresh = RefreshToken.for_user(user)
+            token_data = {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user_id": user.id,
+                "username": user.username,
+                "email": user.email,
+            }
 
             return self._success_response(
-                message="Email verified successfully", status_code=status.HTTP_200_OK
+                data=token_data,
+                message="Email verified successfully. You are now logged in.",
+                status_code=status.HTTP_200_OK
             )
 
         except (
             ValidationError,
             ObjectDoesNotExist,
-            RuntimeError,
             ValueError,
             AttributeError,
         ) as e:
-            print(f"Error in verification: {str(e)}")
+            logging.error(f"Error in verification: {str(e)}", exc_info=True)
             return self._error_response(
-                message=f"An error occurred during verification: {str(e)}",
+                message=f"Verification failed: {str(e)}",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            logging.error(f"Unexpected error in verification: {str(e)}", exc_info=True)
+            return self._error_response(
+                message=f"An unexpected error occurred during verification: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -286,36 +340,44 @@ class UserViewSet(ViewSet):
     )
     @action(detail=False, methods=["post"])
     def login(self, request):
-        """Login user and get JWT tokens"""
+        """
+        Authenticates a user and returns JWT access and refresh tokens.
+        """
         logger = logging.getLogger(__name__)
         logger.info("Login view reached.")
 
         try:
-            # Validate required fields
             if not request.data.get("email") or not request.data.get("password"):
                 return self._error_response(
-                    message="Email and password are required",
+                    message="Email and password are required.",
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
             serializer = EmailTokenObtainPairSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             data = serializer.validated_data
-            return self._success_response(data=data, message="Login successful")
+            return self._success_response(data=data, message="Login successful.")
         except ValidationError as e:
-            logger.error("Validation error in login: %s", str(e))
+            logger.error("Validation error in login: %s", e.detail)
+            if isinstance(e.detail, dict):
+                first_error_list = next(iter(e.detail.values()), ["An error occurred."])
+                message = str(first_error_list[0])
+            elif isinstance(e.detail, list):
+                message = str(e.detail[0])
+            else:
+                message = str(e.detail)
             return self._error_response(
-                message=str(e), status_code=status.HTTP_400_BAD_REQUEST
+                message=message, status_code=status.HTTP_400_BAD_REQUEST
             )
         except TokenError:
             logger.error("Invalid credentials in login")
             return self._error_response(
-                message="Invalid credentials", status_code=status.HTTP_401_UNAUTHORIZED
+                message="Invalid credentials.", status_code=status.HTTP_401_UNAUTHORIZED
             )
-        except (RuntimeError, ValueError, AttributeError, ObjectDoesNotExist):
-            logger.error("Login error: %s", str(e))
+        except (RuntimeError, ValueError, AttributeError, ObjectDoesNotExist) as e:
+            logger.error("Login error: %s", str(e), exc_info=True)
             return self._error_response(
-                message="An error occurred during login",
+                message="An unexpected error occurred during login.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -340,181 +402,161 @@ class UserViewSet(ViewSet):
     )
     @action(detail=False, methods=["post"])
     def refresh_token(self, request):
-        """Refresh an expired JWT access token using a valid refresh token.
-
-        This endpoint allows users to obtain a new access token by providing a valid refresh token.
-        The refresh token must not be expired or invalidated.
-
-        Args:
-            request: HTTP request object containing the refresh token in request.data
-
-        Returns:
-            Response object with:
-                - New access token on success
-                - Error message and appropriate status code on failure
-
-        Raises:
-            TokenError: If refresh token is invalid or expired
-            ValidationError: If request data is invalid
-            RuntimeError: If there's an error during token refresh
+        """
+        Refreshes an expired JWT access token using a valid refresh token.
         """
         try:
             serializer = TokenRefreshSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             return self._success_response(
-                data=serializer.validated_data, message="Token refreshed successfully"
+                data=serializer.validated_data, message="Token refreshed successfully."
             )
         except TokenError:
             return self._error_response(
-                message="Invalid refresh token",
+                message="Invalid refresh token.",
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
         except (RuntimeError, ValueError, AttributeError) as e:
             logger = logging.getLogger(__name__)
-            logger.error("Error refreshing token: %s", str(e))
+            logger.error("Error refreshing token: %s", str(e), exc_info=True)
             return self._error_response(
-                message="An error occurred during token refresh",
+                message="An error occurred during token refresh.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @swagger_auto_schema(
-        operation_description="Get user details",
+        operation_description="Retrieve user details. For regular users, retrieves their own profile. For superusers, retrieves a user by ID.",
+        security=[{"Bearer": []}],
         responses={
             200: RegisterUserSerializer,
+            401: "Unauthorized",
             403: "Permission denied",
             404: "User not found",
             500: "Internal Server Error",
         },
     )
     def retrieve(self, request, pk=None):
-        """Retrieve details for a specific user.
-
-        Args:
-            request: The HTTP request object containing user authentication details
-            pk: Primary key (ID) of the user to retrieve
-
-        Returns:
-            Response object with:
-                - User data and success message if found
-                - Error message and appropriate status code on failure
-
-        Raises:
-            PermissionDenied: If user doesn't have permission to access the data
-            ObjectDoesNotExist: If specified user not found
-            RuntimeError: If there's an error retrieving the data
+        """
+        Retrieve user details. For regular users, retrieves their own profile. For superusers, retrieves a user by ID.
         """
         try:
-            # Validate that pk is an integer
-            try:
-                user_id = int(pk)
-            except (ValueError, TypeError):
-                return self._error_response(
-                    message="Invalid user ID format",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-                
-            if not self._check_user_permission(request, user_id):
-                raise PermissionDenied("Insufficient permissions")
-
-            user = User.objects.get(pk=user_id)
-            serializer = RegisterUserSerializer(user)
+            target_user = request.user
+            if pk:
+                if not request.user.is_superuser:
+                    raise PermissionDenied("Insufficient permissions to retrieve other users.")
+                target_user = get_object_or_404(User, pk=pk)
+            elif not request.user.is_authenticated:
+                raise PermissionDenied("User not authenticated.")
+            serializer = RegisterUserSerializer(target_user)
             return self._success_response(
-                data=serializer.data, message="User details retrieved successfully"
+                data=serializer.data, message="User details retrieved successfully."
             )
         except ObjectDoesNotExist:
             return self._error_response(
-                message="User not found", status_code=status.HTTP_404_NOT_FOUND
+                message="User not found.", status_code=status.HTTP_404_NOT_FOUND
             )
         except PermissionDenied as e:
             return self._error_response(
                 message=str(e), status_code=status.HTTP_403_FORBIDDEN
             )
-        except (RuntimeError, ValueError, AttributeError):
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error retrieving user details: {e}", exc_info=True)
             return self._error_response(
-                message="An error occurred",
+                message="An error occurred while retrieving user details.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @swagger_auto_schema(
-        operation_description="Update user information",
-        request_body=RegisterUserSerializer,
+        operation_description="Update user information by ID (admin) or current authenticated user (regular user)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                "user_id": openapi.Schema(
+                    type=openapi.TYPE_INTEGER,
+                    description="ID of the user to update (admin only, overrides URL pk if present). This field is for admin use only and should not be sent by regular users.",
+                    read_only=True,
+                ),
+                "email": openapi.Schema(type=openapi.TYPE_STRING, format="email", description="User's email address"),
+                "username": openapi.Schema(type=openapi.TYPE_STRING, description="User's username"),
+                "password": openapi.Schema(type=openapi.TYPE_STRING, format="password", write_only=True, description="User's password"),
+                "birth_date": openapi.Schema(type=openapi.TYPE_STRING, format="date", description="User's birth date (YYYY-MM-DD)"),
+                "first_name": openapi.Schema(type=openapi.TYPE_STRING, description="User's first name"),
+                "last_name": openapi.Schema(type=openapi.TYPE_STRING, description="User's last name"),
+                "is_active": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="User account active status (admin only)"),
+                "is_email_verified": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="User email verification status (admin only)"),
+                "is_staff": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Staff status (superuser only)"),
+                "is_superuser": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Superuser status (superuser only)"),
+            },
+        ),
+        security=[{"Bearer": []}],
         responses={
             200: RegisterUserSerializer,
+            401: "Unauthorized",
             403: "Permission denied",
             404: "User not found",
             500: "Internal Server Error",
         },
     )
-    def update_user_info(self, request, pk=None):
-        """Update user information.
+    def update(self, request, pk=None):
+        """
+        Updates user information for a specific user.
 
-        Args:
-            request: HTTP request object containing user data to update
-            pk: Primary key of the user to update
-
-        Returns:
-            Response object with:
-                - Updated user data and success message on success
-                - Error message and appropriate status code on failure
-
-        Raises:
-            PermissionDenied: If user doesn't have permission to update
-            ObjectDoesNotExist: If specified user not found
-            ValidationError: If update data is invalid
-            RuntimeError: If there's an error during update
+        If `pk` is provided, updates the user with that ID (admin only).
+        If `pk` is not provided, updates the authenticated user's profile.
+        Only superusers can modify `is_staff` or `is_superuser` status.
         """
         try:
-            # Validate that pk is an integer
-            try:
-                user_id = int(pk)
-            except (ValueError, TypeError):
-                return self._error_response(
-                    message="Invalid user ID format",
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                )
-                
-            if not self._check_user_permission(request, user_id):
-                raise PermissionDenied("Insufficient permissions")
+            target_user = request.user
+            user_id_from_payload = request.data.get("user_id")
 
-            user = User.objects.get(pk=user_id)
+            if pk:
+                if not request.user.is_superuser:
+                    raise PermissionDenied("Insufficient permissions to update other users.")
+                target_user = User.objects.get(pk=pk)
+            elif user_id_from_payload is not None:
+                if not request.user.is_superuser:
+                    raise PermissionDenied("Insufficient permissions to update other users via payload ID.")
+                target_user = User.objects.get(pk=user_id_from_payload)
+            elif not request.user.is_authenticated:
+                raise PermissionDenied("User not authenticated.")
 
-            # Only superuser can modify admin status
             if "is_staff" in request.data or "is_superuser" in request.data:
                 if not request.user.is_superuser:
-                    raise PermissionDenied("Insufficient permissions")
+                    raise PermissionDenied("Insufficient permissions to modify admin status.")
 
-            serializer = RegisterUserSerializer(user, data=request.data, partial=True)
+            serializer = RegisterUserSerializer(target_user, data=request.data, partial=True)
             if serializer.is_valid():
                 try:
                     serializer.save()
                     return self._success_response(
                         data=serializer.data,
-                        message="User information updated successfully",
+                        message="User information updated successfully.",
                     )
                 except Exception as e:
                     logger = logging.getLogger(__name__)
-                    logger.error(f"Error saving user {pk}: {str(e)}")
+                    logger.error(f"Error saving user {target_user.id}: {str(e)}", exc_info=True)
                     return self._error_response(
                         message=f"Error saving user: {str(e)}",
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     )
             else:
                 logger = logging.getLogger(__name__)
-                logger.error(f"Validation error for user {pk}: {serializer.errors}")
+                logger.error(f"Validation error for user {target_user.id}: {serializer.errors}")
                 return self._error_response(
-                    message="Update failed", errors=serializer.errors
+                    message="Update failed.", errors=serializer.errors
                 )
         except ObjectDoesNotExist:
             return self._error_response(
-                message="User not found", status_code=status.HTTP_404_NOT_FOUND
+                message="User not found.", status_code=status.HTTP_404_NOT_FOUND
             )
         except PermissionDenied as e:
             return self._error_response(
-                message=str(e), status_code=status.HTTP_403_FORBIDDEN
+                message=str(e), status_code=status.HTTP_401_UNAUTHORIZED
             )
         except (RuntimeError, ValueError, AttributeError, IntegrityError) as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Error updating user {pk}: {str(e)}")
+            logger.error(f"Error updating user: {str(e)}", exc_info=True)
             return self._error_response(
                 message=f"An error occurred: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -530,51 +572,44 @@ class UserViewSet(ViewSet):
         },
     )
     def destroy(self, request, pk=None):
-        """Delete a user from the system.
+        """
+        Deletes a user from the system.
 
-        This endpoint is only accessible by superusers and allows deletion of any user
-        except the requesting superuser themselves.
-
-        Args:
-            request: The HTTP request object containing user authentication details
-            pk: Primary key (ID) of the user to be deleted
-
-        Returns:
-            Response object with:
-                - Success message and 204 status on successful deletion
-                - Error message and appropriate status code on failure
-
-        Raises:
-            PermissionDenied: If user is not a superuser or tries to delete themselves
-            ObjectDoesNotExist: If specified user does not exist
-            RuntimeError: If there's an error during deletion
+        Allows an authenticated user to delete their own account (if no `pk` is provided).
+        Allows a superuser to delete any user by ID (except themselves).
         """
         try:
-            if not self._check_superuser_permission(request):
-                raise PermissionDenied("Insufficient permissions")
+            target_user = request.user
+            if pk:
+                if not request.user.is_superuser:
+                    raise PermissionDenied("Insufficient permissions to delete other users.")
+                target_user = User.objects.get(pk=pk)
+            elif not request.user.is_authenticated:
+                raise PermissionDenied("User not authenticated.")
 
-            user = User.objects.get(pk=pk)
+            if target_user.id == request.user.id and request.user.is_superuser:
+                raise PermissionDenied("Superusers cannot delete their own account via this endpoint.")
+            elif target_user.id != request.user.id and not request.user.is_superuser:
+                raise PermissionDenied("You can only delete your own account.")
 
-            # Prevent self-deletion
-            if user.id == request.user.id:
-                raise PermissionDenied("Cannot delete your own account")
-
-            user.delete()
+            target_user.delete()
             return self._success_response(
-                message="User deleted successfully",
+                message="User deleted successfully.",
                 status_code=status.HTTP_204_NO_CONTENT,
             )
         except ObjectDoesNotExist:
             return self._error_response(
-                message="User not found", status_code=status.HTTP_404_NOT_FOUND
+                message="User not found.", status_code=status.HTTP_404_NOT_FOUND
             )
         except PermissionDenied as e:
             return self._error_response(
                 message=str(e), status_code=status.HTTP_403_FORBIDDEN
             )
-        except (RuntimeError, ValueError, AttributeError, IntegrityError):
+        except (RuntimeError, ValueError, AttributeError, IntegrityError) as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error deleting user: {str(e)}", exc_info=True)
             return self._error_response(
-                message="An error occurred",
+                message="An error occurred during deletion.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -588,43 +623,32 @@ class UserViewSet(ViewSet):
     )
     @permission_classes([IsSuperUser])
     def all_users(self, request):
-        """Get a list of all users in the system.
+        """
+        Retrieves a list of all users in the system.
 
-        This endpoint is only accessible by superusers and returns details of all registered users.
-
-        Args:
-            request: The HTTP request object containing user authentication details
-
-        Returns:
-            Response object with:
-                - List of serialized user data on success
-                - Error message and status code on failure
-
-        Raises:
-            PermissionDenied: If user is not a superuser
-            RuntimeError: If there's an error retrieving users
+        This endpoint is only accessible by superusers.
         """
         try:
-            if not self._check_superuser_permission(request):
-                raise PermissionDenied("Insufficient permissions")
+            self._check_superuser_permission(request)
 
             users = User.objects.all()
             serializer = RegisterUserSerializer(users, many=True)
             return self._success_response(
-                data=serializer.data, message="Users retrieved successfully"
+                data=serializer.data, message="Users retrieved successfully."
             )
         except PermissionDenied as e:
             return self._error_response(
                 message=str(e), status_code=status.HTTP_403_FORBIDDEN
             )
-        except (RuntimeError, ValueError, AttributeError, IntegrityError):
+        except (RuntimeError, ValueError, AttributeError, IntegrityError) as e:
+            logging.error(f"Error retrieving all users: {str(e)}", exc_info=True)
             return self._error_response(
-                message="An error occurred",
+                message="An error occurred.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @swagger_auto_schema(
-        operation_description="Change user password",
+        operation_description="Change user password by ID (admin) or current authenticated user (regular user)",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             required=["old_password", "new_password"],
@@ -637,163 +661,67 @@ class UserViewSet(ViewSet):
                 ),
             },
         ),
+        security=[{"Bearer": []}],
         responses={
             200: "Password changed successfully",
             400: "Invalid input",
+            401: "Unauthorized",
             403: "Permission denied",
             404: "User not found",
             500: "Internal Server Error",
         },
     )
-    @action(detail=True, methods=["put"])
+    @action(detail=False, methods=["put"], url_path="change-password")
     def change_password(self, request, pk=None):
-        """Change a user's password.
-
-        Args:
-            request: HTTP request object containing old_password and new_password
-            pk: Primary key of the user whose password is being changed
-
-        Returns:
-            Response with success/error message and appropriate status code
-
-        Raises:
-            PermissionDenied: If user doesn't have permission
-            ObjectDoesNotExist: If user not found
-            ValidationError: If passwords invalid/missing
         """
-        try:
-            if not self._check_user_permission(request, pk):
-                raise PermissionDenied("Insufficient permissions")
+        Changes the password for a user.
 
-            user = User.objects.get(pk=pk)
+        If `pk` is provided, changes the password for that user (admin only).
+        If `pk` is not provided, changes the password for the authenticated user.
+        Requires `old_password` and `new_password` for self-service changes.
+        Admin can change any user"s password without knowing the old one.
+        """
+        target_user = request.user
+        try:
+            if pk:
+                if not request.user.is_superuser:
+                    raise PermissionDenied("Insufficient permissions to change other users' passwords.")
+                target_user = User.objects.get(pk=pk)
+            elif not request.user.is_authenticated:
+                raise PermissionDenied("User not authenticated.")
+
             old_password = request.data.get("old_password")
             new_password = request.data.get("new_password")
 
             if not old_password or not new_password:
-                raise ValidationError("Both old and new passwords are required")
+                raise ValidationError("Both old and new passwords are required.")
 
-            if not check_password(old_password, user.password):
-                raise ValidationError("Invalid old password")
+            if not request.user.is_superuser or (request.user.is_superuser and target_user.id == request.user.id):
+                if not check_password(old_password, target_user.password):
+                    raise ValidationError("Invalid old password.")
+            # Admin changing another user's password does not require old_password validation.
 
-            user.password = make_password(new_password)
-            user.save()
-            return self._success_response(message="Password changed successfully")
+            target_user.password = make_password(new_password)
+            target_user.save()
+            return self._success_response(message="Password changed successfully.")
         except ObjectDoesNotExist:
             return self._error_response(
-                message="User not found", status_code=status.HTTP_404_NOT_FOUND
+                message="User not found.", status_code=status.HTTP_404_NOT_FOUND
             )
         except PermissionDenied as e:
             return self._error_response(
-                message=str(e), status_code=status.HTTP_403_FORBIDDEN
+                message=str(e), status_code=status.HTTP_401_UNAUTHORIZED
             )
         except ValidationError as e:
             return self._error_response(
                 message=str(e), status_code=status.HTTP_400_BAD_REQUEST
             )
-        except (RuntimeError, ValueError, AttributeError) as e:
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            user_id_for_log = target_user.id if target_user else "N/A"
+            logger.error(f"Error changing password for user {user_id_for_log}: {e}", exc_info=True)
             return self._error_response(
-                message="An error occurred",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    @swagger_auto_schema(
-        operation_description="Create superuser (superuser only)",
-        request_body=RegisterUserSerializer,
-        responses={
-            201: RegisterUserSerializer,
-            403: "Permission denied",
-            500: "Internal Server Error",
-        },
-    )
-    @action(detail=False, methods=["post"])
-    @permission_classes([IsSuperUser])
-    def create_superuser(self, request):
-        """Create a superuser - only accessible by existing superusers"""
-        try:
-            if not self._check_superuser_permission(request):
-                raise PermissionDenied("Insufficient permissions")
-
-            # Ensure is_superuser is set to True
-            request.data["is_superuser"] = True
-            request.data["is_active"] = True
-            request.data["is_email_verified"] = True
-
-            serializer = RegisterUserSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return self._success_response(
-                    data=serializer.data,
-                    message="Superuser created successfully",
-                    status_code=status.HTTP_201_CREATED,
-                )
-            return self._error_response(
-                message="Superuser creation failed", errors=serializer.errors
-            )
-        except PermissionDenied as e:
-            return self._error_response(
-                message=str(e), status_code=status.HTTP_403_FORBIDDEN
-            )
-        except (ValidationError, IntegrityError, PermissionError):
-            return self._error_response(
-                message="An error occurred during superuser creation",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    @swagger_auto_schema(
-        operation_description="Create staff user (staff/superuser only)",
-        request_body=RegisterUserSerializer,
-        responses={
-            201: RegisterUserSerializer,
-            403: "Permission denied",
-            500: "Internal Server Error",
-        },
-    )
-    @action(detail=False, methods=["post"])
-    @permission_classes([IsStaffOrSuperUser])
-    def create_staff(self, request):
-        """Create a staff user - accessible by superusers and staff"""
-        try:
-            if not self._check_staff_permission(request):
-                raise PermissionDenied("Insufficient permissions")
-
-            # Ensure is_staff is set to True
-            request.data["is_staff"] = True
-            request.data["is_active"] = True
-            request.data["is_email_verified"] = True
-
-            serializer = RegisterUserSerializer(data=request.data)
-            if serializer.is_valid():
-                serializer.save()
-                return self._success_response(
-                    data=serializer.data,
-                    message="Staff user created successfully",
-                    status_code=status.HTTP_201_CREATED,
-                )
-            return self._error_response(
-                message="Staff user creation failed", errors=serializer.errors
-            )
-        except PermissionDenied as e:
-            return self._error_response(
-                message=str(e), status_code=status.HTTP_403_FORBIDDEN
-            )
-        except (RuntimeError, ValueError, AttributeError, ObjectDoesNotExist) as e:
-            print(f"An error occurred during staff user creation: {str(e)}")
-            return self._error_response(
-                message=f"An unexpected error occurred: {str(e)}",
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-    @action(detail=False, methods=["get"])
-    def test_celery(self, _):
-        """Test endpoint to verify Celery is working"""
-        try:
-            result = test_celery.delay()
-            return self._success_response(
-                message="Celery task queued successfully", data={"task_id": result.id}
-            )
-        except (ConnectionError, TimeoutError, RuntimeError) as e:
-            return self._error_response(
-                message=f"Error testing Celery: {str(e)}",
+                message="An error occurred.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -809,17 +737,32 @@ class UserViewSet(ViewSet):
     )
     @action(detail=False, methods=["post"])
     def resend_verification_email(self, request):
-        """Resend verification email to an unverified user"""
+        """
+        Resends a verification email to an unverified user.
+        """
         try:
             serializer = ResendVerificationEmailSerializer(data=request.data)
             if not serializer.is_valid():
                 return self._error_response(
-                    message="Invalid request data",
+                    message="Invalid request data.",
                     errors=serializer.errors,
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            email = serializer.validated_data["email"]
+            validated_data = serializer.validated_data
+            if not isinstance(validated_data, dict):
+                return self._error_response(
+                    message="Invalid validated data format from serializer.",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+            email = validated_data.get("email")
+
+            if not email:
+                return self._error_response(
+                    message="Email is required for resending verification.",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
 
             try:
                 user = User.objects.get(email=email)
@@ -828,7 +771,6 @@ class UserViewSet(ViewSet):
                     message="User not found.", status_code=status.HTTP_404_NOT_FOUND
                 )
 
-            # Use the existing auth_key
             auth_key = user.auth_key
 
             if not auth_key:
@@ -837,25 +779,13 @@ class UserViewSet(ViewSet):
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Queue the email sending task with the existing auth_key
-            app = __import__("backend.celery", fromlist=["app"]).app
+            logging.info(f"Sending re-verification email for {email}")
+            threading.Thread(target=send_verification_email, args=[email, auth_key]).start()
 
-            print(f"Queueing re-verification email for {email}")
-            try:
-                result = app.send_task(
-                    "APIs.tasks.send_verification_email", args=[email, auth_key]
-                )
-                return self._success_response(
-                    message="Verification email queued for resending.",
-                    data={"task_id": result.id},
-                    status_code=status.HTTP_200_OK,
-                )
-            except (ConnectionError, TimeoutError) as e:
-                print(f"Celery task queuing failed for resend: {str(e)}")
-                return self._error_response(
-                    message=f"Failed to queue verification email resend task: {str(e)}",
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+            return self._success_response(
+                message="Verification email sent successfully.",
+                status_code=status.HTTP_200_OK,
+            )
 
         except ValidationError as e:
             return self._error_response(
@@ -864,8 +794,87 @@ class UserViewSet(ViewSet):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
         except (RuntimeError, ValueError, AttributeError, ObjectDoesNotExist) as e:
-            print(f"Unexpected error in resend_verification_email: {str(e)}")
+            logging.error(f"Unexpected error in resend_verification_email: {str(e)}", exc_info=True)
             return self._error_response(
                 message=f"An unexpected error occurred: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+    @swagger_auto_schema(
+        operation_description="Create a new superuser (admin only)",
+        request_body=RegisterUserSerializer,
+        responses={
+            201: openapi.Response(
+                description="Superuser created successfully",
+                schema=RegisterUserSerializer,
+            ),
+            400: "Bad Request",
+            403: "Permission denied",
+            500: "Internal Server Error",
+        },
+    )
+    @action(detail=False, methods=["post"])
+    def create_superuser(self, request):
+        """
+        Creates a new superuser. Only superusers can access this endpoint.
+        """
+        if not request.user.is_superuser:
+            return self._error_response(
+                message="Insufficient permissions.",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = RegisterUserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            user.is_superuser = True
+            user.is_staff = True
+            user.is_active = True
+            user.is_email_verified = True
+            user.save()
+            return self._success_response(
+                data=RegisterUserSerializer(user).data,
+                message="Superuser created successfully.",
+                status_code=status.HTTP_201_CREATED,
+            )
+        return self._error_response(
+            message="Superuser creation failed.", errors=serializer.errors
+        )
+
+    @swagger_auto_schema(
+        operation_description="Create a new staff user (staff or superuser only)",
+        request_body=RegisterUserSerializer,
+        responses={
+            201: openapi.Response(
+                description="Staff user created successfully",
+                schema=RegisterUserSerializer,
+            ),
+            400: "Bad Request",
+            403: "Permission denied",
+            500: "Internal Server Error",
+        },
+    )
+    @action(detail=False, methods=["post"])
+    def create_staff(self, request):
+        """
+        Creates a new staff user. Only staff or superusers can access this endpoint.
+        """
+        if not (request.user.is_staff or request.user.is_superuser):
+            return self._error_response(
+                message="Insufficient permissions.",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = RegisterUserSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            user.is_staff = True
+            user.is_active = True
+            user.is_email_verified = True
+            user.save()
+            return self._success_response(
+                data=RegisterUserSerializer(user).data,
+                message="Staff user created successfully.",
+                status_code=status.HTTP_201_CREATED,
+            )
+        return self._error_response(
+            message="Staff user creation failed.", errors=serializer.errors
+        )

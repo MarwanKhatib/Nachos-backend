@@ -1,58 +1,17 @@
-version: "3.9"
-
 services:
-  db:
-    image: mysql:8.3
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME}
-    volumes:
-      - db_data:/var/lib/mysql
-    ports:
-      - "3306:3306"
-
   web:
     build: .
-    command: /app/dev-start.sh
+    command: /app/start.sh
     volumes:
       - .:/app
     ports:
       - "8000:3000"
-    depends_on:
-      - db
     environment:
       - DJANGO_SETTINGS_MODULE=backend.settings
-      - DATABASE_HOST=db
+      - DATABASE_HOST=${DB_HOST}
       - DATABASE_NAME=${DB_NAME}
       - DATABASE_USER=${DB_USER}
       - DATABASE_PASSWORD=${DB_PASSWORD}
       - PORT=3000
     env_file:
-      - .env-dev
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:5.2
-    restart: always
-    ports:
-      - "8080:80"
-    environment:
-      PMA_HOST: db
-      PMA_PORT: 3306
-      PMA_USER: ${DB_USER}
-      PMA_PASSWORD: ${DB_PASSWORD}
-      UPLOAD_LIMIT: 100M
-    depends_on:
-      - db
-    env_file:
-      - .env-dev
-  redis:
-    image: redis:7.0
-    restart: always
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-volumes:
-  db_data:
-  redis_data:
+      - .env

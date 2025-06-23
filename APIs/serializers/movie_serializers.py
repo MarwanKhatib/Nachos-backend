@@ -128,14 +128,12 @@ class WatchlistItemSerializer(serializers.Serializer):
     Handles serialization and validation of user's watchlist entries.
     """
 
-    user_id = serializers.IntegerField(min_value=1)
     movie_id = serializers.IntegerField(min_value=1)
 
     def validate(self, attrs):
         """Validate watchlist item data"""
-        # Use attrs parameter instead of undefined data variable
-        if attrs["user_id"] <= 0 or attrs["movie_id"] <= 0:
-            raise serializers.ValidationError("IDs must be positive integers")
+        if attrs["movie_id"] <= 0:
+            raise serializers.ValidationError("Movie ID must be a positive integer")
         return attrs
 
     def create(self, validated_data):
@@ -144,13 +142,7 @@ class WatchlistItemSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """Update and return an existing watchlist item"""
-        fields = ["user_id", "movie_id"]
-
-        for field in fields:
-            setattr(
-                instance, field, validated_data.get(field, getattr(instance, field))
-            )
-
+        instance.movie_id = validated_data.get("movie_id", instance.movie_id)
         return instance
 
 
@@ -160,17 +152,14 @@ class RateMovieSerializer(serializers.Serializer):
     Handles serialization and validation of user movie ratings.
     """
 
-    user_id = serializers.IntegerField(min_value=1)
     movie_id = serializers.IntegerField(min_value=1)
     rate = serializers.FloatField(min_value=0, max_value=5)
 
     def validate(self, attrs):
         """Validate rating data"""
-        # Use attrs parameter instead of undefined data variable
-        if attrs["user_id"] <= 0 or attrs["movie_id"] <= 0:
-            raise serializers.ValidationError("IDs must be positive integers")
+        if attrs["movie_id"] <= 0:
+            raise serializers.ValidationError("Movie ID must be a positive integer")
 
-        # Add validation for rate field
         if attrs["rate"] < 0 or attrs["rate"] > 5:
             raise serializers.ValidationError("Rate must be between 0 and 5")
 
@@ -182,13 +171,8 @@ class RateMovieSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """Update and return an existing rating"""
-        fields = ["user_id", "movie_id", "rate"]
-
-        for field in fields:
-            setattr(
-                instance, field, validated_data.get(field, getattr(instance, field))
-            )
-
+        instance.movie_id = validated_data.get("movie_id", instance.movie_id)
+        instance.rate = validated_data.get("rate", instance.rate)
         return instance
 
 

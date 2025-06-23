@@ -1,17 +1,9 @@
-from celery import shared_task
 import yagmail
 from decouple import config
 import logging
 
-logger = logging.getLogger('celery')
+logger = logging.getLogger(__name__)
 
-@shared_task
-def test_celery():
-    """Test task to verify Celery is working"""
-    logger.info("Test task is running!")
-    return "Celery is working!"
-
-@shared_task
 def send_verification_email(email, auth_key):
     """Send verification email asynchronously"""
     try:
@@ -111,7 +103,6 @@ def send_verification_email(email, auth_key):
         logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
         return False
 
-@shared_task
 def create_user_suggestions(user_id):
     """Create initial movie suggestions asynchronously"""
     try:
@@ -124,4 +115,4 @@ def create_user_suggestions(user_id):
         return True
     except Exception as e:
         print(f"Error creating movie suggestions: {str(e)}")
-        return False 
+        return False

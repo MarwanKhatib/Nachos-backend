@@ -50,6 +50,10 @@ class User(AbstractUser):
         },
     )
 
+    # Override first_name and last_name to allow null and blank
+    first_name = models.CharField(max_length=150, null=True, blank=True)
+    last_name = models.CharField(max_length=150, null=True, blank=True)
+
     # Use email as the username field for authentication
 
     USERNAME_FIELD = "email"

@@ -90,13 +90,13 @@ DATABASES = {
         "PASSWORD": config("DB_PASSWORD"),
         "HOST": config("DB_HOST"),
         "PORT": config("DB_PORT", default="3306"),
-        # "OPTIONS": {
-        #     "ssl": (
-        #         {"ssl": True}
-        #         if config("DB_USE_SSL", default="False").lower() == "true"
-        #         else {}
-        #     )
-        # },
+        "OPTIONS": {
+            "ssl": (
+                {"ssl": True}
+                if config("DB_USE_SSL", default=False, cast=bool)
+                else {}
+            )
+        },
     }
 }
 
@@ -169,9 +169,6 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),  # Refresh token expires after 1 day
 }
 
-# Redis Configuration
-REDIS_URL = config("REDIS_URL", default="redis://127.0.0.1:6379/0")
-
 # Email Configuration
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST = "smtp.gmail.com"
@@ -180,17 +177,47 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = config("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
 
-# Celery Configuration
-CELERY_BROKER_URL = REDIS_URL
-CELERY_RESULT_BACKEND = REDIS_URL
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = TIME_ZONE
-
 # Add Swagger settings for JWT authentication
 SWAGGER_SETTINGS = {
     "SECURITY_DEFINITIONS": {
         "Bearer": {"type": "apiKey", "name": "Authorization", "in": "header"}
     }
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
+            "style": "{",
+        },
+        "simple": {
+            "format": "{levelname} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": "INFO",
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "APIs": { # Logger for your application's custom logs
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "": { # Root logger
+            "handlers": ["console"],
+            "level": "INFO",
+        },
+    },
 }
