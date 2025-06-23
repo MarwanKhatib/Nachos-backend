@@ -2,15 +2,14 @@
 nixPkgs = [
   "python311",
   "pkg-config",
-  "mariadb-connector-c",
-  "mysql80", # provides correct mysqlclient.pc
+  "mysql80",
   "gcc",
   "gnumake"
 ]
 
 [phases.install]
-env = {
-  PKG_CONFIG_PATH = "${PKG_CONFIG_PATH:-}/nix/store/*-mysql80-*/lib/pkgconfig"
+env = { 
+  PKG_CONFIG_PATH = "/nix/store" 
 }
 cmds = [
   "python -m venv venv",
