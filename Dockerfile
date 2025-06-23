@@ -28,4 +28,4 @@ RUN chmod +x start.sh
 EXPOSE 8000
 
 # Start the application
-CMD bash -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn backend.wsgi:application --bind 0.0.0.0:${PORT:-8000}"
+CMD ["./start.sh"]
