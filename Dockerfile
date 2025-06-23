@@ -17,6 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
-
+EXPOSE 8000
 # Start Gunicorn directly, binding to the port provided by Railway
 CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:${PORT:-8000}", "--workers", "3"]
