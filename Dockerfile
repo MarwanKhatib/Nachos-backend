@@ -12,7 +12,6 @@ RUN apt-get update && \
 
 # Set non-secret environment variable defaults only
 ENV DJANGO_SETTINGS_MODULE=backend.settings
-ENV PORT=8000
 
 # Install Python dependencies
 COPY requirements.txt .
