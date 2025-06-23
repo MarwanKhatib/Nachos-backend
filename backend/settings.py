@@ -31,7 +31,8 @@ DEBUG = True
 #     ".up.railway.app",
 # ]
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["localhost","127.0.0.1","nachos-backend-production.up.railway.app"]
+CSRF_TRUSTED_ORIGINS=["https://nachos-backend-production.up.railway.app"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
