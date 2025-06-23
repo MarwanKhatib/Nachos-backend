@@ -2,14 +2,13 @@
 nixPkgs = [
   "python311",
   "pkg-config",
-  "mysql80",
+  "mariadb-connector-c",   # <<<<<<<<<< use this instead of mysql80
   "gcc",
   "gnumake"
 ]
 
 [phases.install]
-env = { PKG_CONFIG_PATH = "/nix/store" }
-
+env = { PKG_CONFIG_PATH = "/nix/store/lib/pkgconfig" }  # Adjust this path to where .pc files are
 cmds = [
   "python -m venv venv",
   ". venv/bin/activate && pip install --upgrade pip",
