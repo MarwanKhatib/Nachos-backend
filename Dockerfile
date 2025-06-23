@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies for MySQL
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    default-libmysqlclient-dev \
+    pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Start Gunicorn directly, binding to the port provided by Railway
+CMD ["gunicorn", "backend.wsgi:application", "--bind", "0.0.0.0:${PORT:-8000}", "--workers", "3"]
