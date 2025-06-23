@@ -31,9 +31,44 @@ DEBUG = True
 #     ".up.railway.app",
 # ]
 
-ALLOWED_HOSTS = ["localhost","127.0.0.1","nachos-backend-production.up.railway.app"]
-CSRF_TRUSTED_ORIGINS=["https://nachos-backend-production.up.railway.app"]
-CORS_ALLOW_ALL_ORIGINS = True
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1", 
+    "nachos-backend-production.up.railway.app",
+    ".up.railway.app",  # Allow all Railway subdomains
+]
+
+# CORS Settings for production
+CORS_ALLOWED_ORIGINS = [
+    "https://nachos-backend-production.up.railway.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Allow credentials for Swagger UI
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow all headers and methods for API testing
+CORS_ALLOW_ALL_HEADERS = True
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET", 
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# CSRF settings for HTTPS
+CSRF_TRUSTED_ORIGINS = [
+    "https://nachos-backend-production.up.railway.app",
+]
+
+# Security settings for production
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = False  # Set to True if you want to force HTTPS
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -186,7 +221,21 @@ EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")
 SWAGGER_SETTINGS = {
     "SECURITY_DEFINITIONS": {
         "Bearer": {"type": "apiKey", "name": "Authorization", "in": "header"}
-    }
+    },
+    "USE_SESSION_AUTH": False,
+    "JSON_EDITOR": True,
+    "SUPPORTED_SUBMIT_METHODS": [
+        "get",
+        "post",
+        "put",
+        "delete",
+        "patch",
+    ],
+    "OPERATIONS_SORTER": "alpha",
+    "TAGS_SORTER": "alpha",
+    "DOC_EXPANSION": "none",
+    "DEFAULT_MODEL_RENDERING": "example",
+    "DEEP_LINKING": True,
 }
 
 LOGGING = {
