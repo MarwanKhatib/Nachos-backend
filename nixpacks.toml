@@ -8,9 +8,8 @@ nixPkgs = [
 ]
 
 [phases.install]
-env = { 
-  PKG_CONFIG_PATH = "/nix/store" 
-}
+env = { PKG_CONFIG_PATH = "/nix/store" }
+
 cmds = [
   "python -m venv venv",
   ". venv/bin/activate && pip install --upgrade pip",
