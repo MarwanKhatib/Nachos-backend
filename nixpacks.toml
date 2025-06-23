@@ -5,7 +5,7 @@ nixPkgs = [
   "mariadb-connector-c",
   "libmysqlclient",
   "gcc",
-  "make"
+  "gnumake"
 ]
 
 [phases.install]
