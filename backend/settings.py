@@ -236,6 +236,7 @@ SWAGGER_SETTINGS = {
     "DOC_EXPANSION": "none",
     "DEFAULT_MODEL_RENDERING": "example",
     "DEEP_LINKING": True,
+    "SCHEMES": ["https", "http"],  # Add schemes here instead
 }
 
 LOGGING = {
