@@ -28,7 +28,7 @@ from APIs.models.movie_comment_model import MovieComment
 from APIs.models.movie_director_model import MovieDirector
 from APIs.models.movie_genre_model import MovieGenre
 from APIs.models.movie_producer_model import MovieProducer
-from APIs.models.movie_writer_model import Writer
+from APIs.models.movie_writer_model import MovieWriter
 from APIs.models.producer_model import Producer
 from APIs.models.user_model import User
 from APIs.models.community_model import UserGenre, UserSuggestionList, UserWatchedMovie
