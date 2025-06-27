@@ -107,12 +107,64 @@ def create_user_suggestions(user_id):
     """Create initial movie suggestions asynchronously"""
     try:
         # Import here to avoid circular imports
-        from .models.user_model import User
-        from .utils.suggestion_helpers import create_initial_movie_suggestions
+        from APIs.models.user_model import User
+        from APIs.utils.suggestion_helpers import create_initial_movie_suggestions
         
         user = User.objects.get(id=user_id)
         create_initial_movie_suggestions(user)
         return True
     except Exception as e:
         print(f"Error creating movie suggestions: {str(e)}")
+        return False
+
+
+def send_password_reset_email(email, uidb64, token):
+    """Send password reset email asynchronously"""
+    try:
+        logger.info(f"Starting password reset email process for {email}")
+        
+        email_user = config("EMAIL_HOST_USER", default=None)
+        email_password = config("EMAIL_HOST_PASSWORD", default=None)
+        
+        if not email_user or not email_password:
+            logger.error("Email configuration is missing for password reset")
+            return False
+        
+        yag = yagmail.SMTP(
+            user=email_user,
+            password=email_password,
+            host='smtp.gmail.com',
+            port=465,
+            smtp_ssl=True,
+            smtp_starttls=False,
+            smtp_skip_login=False,
+            timeout=30
+        )
+        
+        # Construct the reset link (adjust domain as needed)
+        # In a production environment, this should be your frontend URL
+        reset_link = f"http://localhost:3000/reset-password/{uidb64}/{token}/" 
+        
+        contents = f"""
+        <p>Hello,</p>
+        <p>You are receiving this email because you requested a password reset for your account.</p>
+        <p>Please click on the following link to reset your password:</p>
+        <p><a href="{reset_link}">Reset your password</a></p>
+        <p>If you did not request a password reset, please ignore this email.</p>
+        <p>Thank you,</p>
+        <p>The Nachos Team</p>
+        """
+
+        yag.send(
+            to=email,
+            subject="Password Reset Request for Nachos",
+            contents=contents,
+            prettify_html=True
+        )
+        
+        logger.info(f"Password reset email sent successfully to {email}")
+        return True
+            
+    except Exception as e:
+        logger.error(f"Error sending password reset email to {email}: {str(e)}", exc_info=True)
         return False

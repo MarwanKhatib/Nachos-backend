@@ -1,6 +1,9 @@
-from APIs.models import Movie, MovieGenre, UserGenre, UserSuggestionList, User
+from APIs.models.movie_model import Movie
+from APIs.models.movie_genre_model import MovieGenre
+from APIs.models.community_model import UserGenre, UserSuggestionList
+from APIs.models.user_model import User
 from django.db import transaction
-from .genre_calculator import genres_delta
+from APIs.utils.suggestion_helpers.genre_calculator import genres_delta
 
 
 def create_initial_movie_suggestions(user):

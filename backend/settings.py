@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = config("SECRET_KEY")
 
-DEBUG = True
+DEBUG = config("DEBUG", default=False, cast=bool)
 
 # ALLOWED_HOSTS = [
 #     # "marwankhatib.github.io",
@@ -43,6 +43,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://nachos-backend-production.up.railway.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:8000",  # Add the host port for local Docker access
+    "http://127.0.0.1:8000",  # Add the host port for local Docker access
 ]
 
 # Allow credentials for Swagger UI
@@ -62,13 +64,17 @@ CORS_ALLOW_METHODS = [
 # CSRF settings for HTTPS
 CSRF_TRUSTED_ORIGINS = [
     "https://nachos-backend-production.up.railway.app",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 ]
 
 # Security settings for production
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = False  # Set to True if you want to force HTTPS
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if not DEBUG else None
+SECURE_SSL_REDIRECT = not DEBUG  # Force HTTPS in production, allow HTTP in debug
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -81,6 +87,7 @@ INSTALLED_APPS = [
     "rest_framework",
     # "rest_framework.authtoken",
     "rest_framework_simplejwt",
+    "rest_framework_simplejwt.token_blacklist", # Added for token blacklisting
     "corsheaders",
     "drf_yasg",  # Swagger documentation
 ]
@@ -93,6 +100,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "APIs.middleware.request_logger_middleware.RequestLoggerMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -165,11 +173,16 @@ USE_I18N = True
 
 USE_TZ = True
 APPEND_SLASH = True
+FORCE_SCRIPT_NAME = "/"
 
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Media files (user uploads)
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Add this for development
 if DEBUG:
@@ -203,9 +216,7 @@ REST_FRAMEWORK = {
 
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(
-        minutes=30
-    ),  # Access token expires after 30 minutes
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),  # Access token expires after 5 minutes
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),  # Refresh token expires after 1 day
 }
 
@@ -236,8 +247,12 @@ SWAGGER_SETTINGS = {
     "DOC_EXPANSION": "none",
     "DEFAULT_MODEL_RENDERING": "example",
     "DEEP_LINKING": True,
-    "SCHEMES": ["https", "http"],  # Add schemes here instead
+    "SCHEMES": ["http", "https"] if DEBUG else ["https", "http"],  # Prioritize http for debug, https for production
+    "DEFAULT_API_URL": "http://localhost:8000" if DEBUG else "https://nachos-backend-production.up.railway.app/",
 }
+
+# Public API URL for drf-yasg to correctly generate URLs
+PUBLIC_API_URL = "http://localhost:8000" if DEBUG else "https://nachos-backend-production.up.railway.app/"
 
 LOGGING = {
     "version": 1,
@@ -266,6 +281,11 @@ LOGGING = {
             "propagate": False,
         },
         "APIs": { # Logger for your application's custom logs
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "APIs.middleware.request_logger_middleware": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

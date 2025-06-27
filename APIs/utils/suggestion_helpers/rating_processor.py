@@ -1,6 +1,7 @@
 import os
 from django.conf import settings
-from APIs.models import RelatedMovie, UserSuggestionList
+from APIs.models.related_movie_model import RelatedMovie
+from APIs.models.community_model import UserSuggestionList
 from django.db import transaction # Import transaction for atomic operations
 
 def update_suggestions_by_rate(user_id, movie_id, rating, subtract=False):

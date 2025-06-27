@@ -3,9 +3,18 @@ from django.urls import include, path, re_path
 from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
-
-from APIs.urls.movie_urls import movie_urls
-from APIs.urls.user_urls import user_urls
+import APIs
+from APIs.urls import group_urls, community_urls
+from APIs.urls.movie import movie_urls
+from APIs.urls import movie as movie_urls_file
+from APIs.views import movie as movie_views
+from APIs.urls.user import user_urls
+from APIs.urls.genres import genres_urls
+from APIs.urls.watchlist import watchlist_urls
+from APIs.urls.authenticate import auth_urls
+from APIs.urls.user import admin_user_urls as admin_urls # Import admin URLs
+from django.conf import settings
+from django.conf.urls.static import static # New import
 
 schema_view = get_schema_view(
     openapi.Info(
@@ -18,13 +27,24 @@ schema_view = get_schema_view(
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
-    url="https://nachos-backend-production.up.railway.app",
+    url=settings.PUBLIC_API_URL,
 )
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("user/", include(user_urls)),
-    path("movies/", include(movie_urls)),
+    path("api/v1/", include([
+        path("auth/", include(auth_urls)),
+        path("profile/", include(user_urls)),
+        path("movies/", include([
+            path("", include(movie_urls_file.movie_urls)),
+            path("rate/<int:movie_id>/", movie_views.rate_movie, name="rate-movie"),
+        ])),
+        path("genres/", include(genres_urls)),
+        path("watchlist/", include(watchlist_urls)),
+        path("admin/", include(admin_urls)),
+        path("groups/", include(group_urls.urlpatterns)),
+        path("communities/", include(community_urls.urlpatterns)),
+    ])),
     # Swagger documentation URLs
     re_path(
         r"^swagger(?P<format>\.json|\.yaml)$",
@@ -38,3 +58,7 @@ urlpatterns = [
     ),
     path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="schema-redoc"),
 ]
+
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

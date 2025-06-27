@@ -9,7 +9,7 @@ import random
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
-from ..managers import CustomUserManager
+from APIs.managers import CustomUserManager
 
 
 class User(AbstractUser):
@@ -28,6 +28,7 @@ class User(AbstractUser):
     birth_date = models.DateField(null=True, blank=True)
     watched_no = models.IntegerField(default=0)
     join_date = models.DateField(auto_now_add=True)
+    profile_picture = models.ImageField(upload_to='profile_pictures/', null=True, blank=True) # New field
 
     # Email verification fields
     auth_key = models.CharField(max_length=6, blank=True, null=True)

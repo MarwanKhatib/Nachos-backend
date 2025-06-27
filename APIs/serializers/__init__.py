@@ -14,19 +14,21 @@ from .group_serializers import (
 )
 from .movie_serializers import (
     AddToWatchlistSerializer,
-    MovieCommentSerializer,
     MovieInfosSerializer,
     MovieSerializer,
     PairStructuresSerializer,
     RateMovieSerializer,
     WatchlistItemSerializer,
 )
+from .movie_review_serializer import MovieReviewSerializer # Import the new serializer
 from .user_serializers import (
     CustomTokenObtainPairSerializer,
     RegisterUserSerializer,
     SelectGenresSerializer,
     UserGenresSerializer,
     VerifyEmailSerializer,
+    RequestPasswordResetSerializer, # New serializer
+    SetNewPasswordSerializer, # New serializer
 )
 
 __all__ = [
@@ -40,7 +42,7 @@ __all__ = [
     "MovieInfosSerializer",
     "WatchlistItemSerializer",
     "RateMovieSerializer",
-    "MovieCommentSerializer",
+    "MovieReviewSerializer", # Add the new serializer
     "CreateGroupSerializer",
     "JoinGroupSerializer",
     "BlockUserSerializer",
@@ -49,4 +51,6 @@ __all__ = [
     "CommentPostSerializer",
     "EditCommentSerializer",
     "AddToWatchlistSerializer",
+    "RequestPasswordResetSerializer", # Add to __all__
+    "SetNewPasswordSerializer", # Add to __all__
 ]

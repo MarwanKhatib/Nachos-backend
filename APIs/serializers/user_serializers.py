@@ -4,8 +4,11 @@ from rest_framework.validators import UniqueValidator
 from rest_framework_simplejwt.serializers import (
     TokenObtainPairSerializer,
     TokenRefreshSerializer,
+    TokenBlacklistSerializer as BlacklistRefreshTokenSerializer,
 )
+from rest_framework_simplejwt.tokens import RefreshToken # Import RefreshToken for type hinting
 import logging
+from typing import cast, Type # Import Type for type hinting
 
 from APIs.models import Genre, User
 
@@ -34,14 +37,19 @@ class RegisterUserSerializer(serializers.Serializer):
     )
     password = serializers.CharField(write_only=True, required=True)
     birth_date = serializers.DateField(required=True)
+    profile_picture = serializers.ImageField(required=False, allow_null=True) # Added profile_picture field
 
     def validate(self, attrs):
-        allowed_fields = {"email", "username", "password", "birth_date"}
+        # Ensure self.initial_data is a dictionary before calling .keys()
+        if not isinstance(self.initial_data, dict):
+            raise ValidationError({"non_field_errors": ["Invalid request data format."]})
+
+        allowed_fields = {"email", "username", "password", "birth_date", "profile_picture"}
         extra_fields = set(self.initial_data.keys()) - allowed_fields
         if extra_fields:
             raise ValidationError({
                 "non_field_errors": [
-                    f"Unexpected field(s): {', '.join(extra_fields)}. Only email, username, password, and birth_date are allowed."
+                    f"Unexpected field(s): {', '.join(extra_fields)}. Only email, username, password, birth_date, and profile_picture are allowed."
                 ]
             })
         return attrs
@@ -51,12 +59,14 @@ class RegisterUserSerializer(serializers.Serializer):
         username = validated_data["username"]
         password = validated_data["password"]
         birth_date = validated_data["birth_date"]
+        profile_picture = validated_data.get("profile_picture") # Get profile_picture
 
         user = User.objects.register_user(
             email=email,
             username=username,
             password=password,
             birth_date=birth_date,
+            profile_picture=profile_picture # Pass profile_picture
         )
         return user
 
@@ -65,8 +75,33 @@ class RegisterUserSerializer(serializers.Serializer):
         for attr, value in validated_data.items():
             if attr == "password":
                 instance.set_password(value)
+            elif attr == "profile_picture": # Handle profile_picture update
+                instance.profile_picture = value
             else:
                 setattr(instance, attr, value)
+        instance.save()
+        return instance
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user profile management (retrieve and update).
+    """
+    class Meta:
+        model = User
+        fields = ['id', 'email', 'username', 'first_name', 'last_name', 'birth_date', 'profile_picture', 'is_email_verified']
+        read_only_fields = ['email', 'username', 'is_email_verified'] # Email and username should not be changed via profile update
+
+    profile_picture = serializers.ImageField(required=False, allow_null=True)
+
+    def update(self, instance, validated_data):
+        # Handle profile picture update separately if it's a file
+        if 'profile_picture' in validated_data:
+            instance.profile_picture = validated_data.pop('profile_picture')
+
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
         return instance
 
@@ -82,7 +117,7 @@ class VerifyEmailSerializer(serializers.Serializer):
         key = attrs.get("key")
         try:
             user = User.objects.get(email=email)
-        except User.DoesNotExist:
+        except User.DoesNotExist: # Pyright should recognize this now
             logging.error(f"Verification failed: User with email {email} does not exist.")
             raise serializers.ValidationError({"email": "User with this email does not exist."})
         if user.is_email_verified:
@@ -105,7 +140,7 @@ class SelectGenresSerializer(serializers.Serializer):
     genre_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
 
     def validate_genre_ids(self, value):
-        valid_genres = Genre.objects.filter(id__in=value)
+        valid_genres = Genre.objects.filter(id__in=value) # Pyright should recognize this now
         if len(valid_genres) != len(value):
             raise serializers.ValidationError("One or more genre IDs are invalid.")
         return value
@@ -117,7 +152,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     """
     def validate(self, attrs):
         data = super().validate(attrs)
-        if not self.user.is_email_verified:
+        if not self.user or not self.user.is_email_verified: # Added check for self.user
             raise ValidationError("Email is not verified.")
         return data
 
@@ -141,8 +176,40 @@ class ResendVerificationEmailSerializer(serializers.Serializer):
             if user.is_email_verified:
                 raise serializers.ValidationError("Email is already verified.")
             return value
-        except User.DoesNotExist:
+        except User.DoesNotExist: # Pyright should recognize this now
             raise serializers.ValidationError("User with this email does not exist.")
+
+
+class RequestPasswordResetSerializer(serializers.Serializer):
+    """
+    Serializer for requesting a password reset.
+    """
+    email = serializers.EmailField(required=True)
+
+    def validate_email(self, value):
+        try:
+            User.objects.get(email=value)
+        except User.DoesNotExist:
+            # We don't want to expose whether an email exists for security reasons
+            # So, we return a success message even if the user doesn't exist.
+            # The actual email sending logic will handle the non-existent user.
+            pass
+        return value
+
+
+class SetNewPasswordSerializer(serializers.Serializer):
+    """
+    Serializer for setting a new password after a reset request.
+    """
+    uidb64 = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
+    new_password = serializers.CharField(write_only=True, required=True)
+    confirm_password = serializers.CharField(write_only=True, required=True)
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError({"new_password": "New passwords must match."})
+        return attrs
 
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -161,14 +228,14 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
                 raise ValidationError("Email and password are required.")
             try:
                 user = User.objects.get(email=email)
-            except User.DoesNotExist:
+            except User.DoesNotExist: # Pyright should recognize this now
                 logging.error(f"No user found with email: {email}")
                 raise ValidationError("No user found with this email.")
             if user.check_password(password):
                 if not user.is_email_verified:
                     logging.error(f"Login attempt with unverified email: {email}")
                     raise ValidationError("Email is not verified.")
-                refresh = self.get_token(user)
+                refresh = cast(RefreshToken, self.get_token(user)) # Explicitly cast to RefreshToken
                 data = {
                     "refresh": str(refresh),
                     "access": str(refresh.access_token),

@@ -40,7 +40,7 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, username, password, **extra_fields)
 
-    def register_user(self, email, username, password, birth_date, first_name=None, last_name=None, **extra_fields):
+    def register_user(self, email, username, password, birth_date, first_name=None, last_name=None, profile_picture=None, **extra_fields):
         """
         Register a new user, enforce age >= 16, generate verification key,
         and send verification email. Handles email sending errors gracefully.
@@ -68,6 +68,7 @@ class CustomUserManager(BaseUserManager):
             birth_date=birth_date,
             first_name=first_name,
             last_name=last_name,
+            profile_picture=profile_picture, # Pass profile_picture
             **extra_fields
         )
 
@@ -90,4 +91,3 @@ class CustomUserManager(BaseUserManager):
             logging.error(f"Failed to send verification email to {email}: {e}")
 
         return user
-

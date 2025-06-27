@@ -33,6 +33,7 @@ from APIs.models.producer_model import Producer
 from APIs.models.related_movie_model import RelatedMovie
 from APIs.models.user_model import User
 from APIs.models.writer_model import Writer
+from APIs.models.movie_comment_model import MovieComment # Import new model
 
 __all__ = [
     "User",
@@ -60,4 +61,5 @@ __all__ = [
     "UserPost",
     "UserReact",
     "UserComment",
+    "MovieComment", # Add to __all__
 ]
