@@ -20,10 +20,6 @@ from django.shortcuts import get_object_or_404
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken # New import
 
-from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-
 from APIs.models.user_model import User
 from APIs.serializers.user_serializers import (
     EmailTokenObtainPairSerializer,
@@ -33,7 +29,7 @@ from APIs.serializers.user_serializers import (
     RequestPasswordResetSerializer,
     SetNewPasswordSerializer,
 )
-from APIs.tasks import create_user_suggestions, send_verification_email, send_password_reset_email
+from APIs.tasks import create_user_suggestions, send_verification_email, send_password_reset_code_email
 
 # Removed direct import of TokenBlacklistSerializer as it's being bypassed
 # from rest_framework_simplejwt.serializers import (
@@ -440,14 +436,13 @@ class AuthenticationViewSet(ViewSet):
         email = cast(dict, serializer.validated_data)["email"]
         try:
             user = User.objects.get(email=email)
-            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-            token = PasswordResetTokenGenerator().make_token(user)
+            code = user.generate_password_reset_code()
 
             # Send email asynchronously
-            threading.Thread(target=send_password_reset_email, args=[email, uidb64, token]).start()
+            threading.Thread(target=send_password_reset_code_email, args=[email, code]).start()
 
             return self._success_response(
-                message="Password reset email sent successfully. Please check your inbox.",
+                message="Password reset code sent successfully. Please check your inbox.",
                 status_code=status.HTTP_200_OK,
             )
         except ObjectDoesNotExist:
@@ -455,7 +450,7 @@ class AuthenticationViewSet(ViewSet):
             # This prevents enumeration of existing user accounts.
             logging.warning(f"Password reset requested for non-existent email: {email}")
             return self._success_response(
-                message="If an account with that email exists, a password reset email has been sent.",
+                message="If an account with that email exists, a password reset code has been sent.",
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
@@ -466,11 +461,11 @@ class AuthenticationViewSet(ViewSet):
             )
 
     @swagger_auto_schema(
-        operation_description="Set new password using UID and token from reset email",
+        operation_description="Set new password using email, code, and new password (without old password)",
         request_body=SetNewPasswordSerializer,
         responses={
             200: "Password set successfully",
-            400: "Invalid token or UID",
+            400: "Invalid data or credentials",
             404: "User not found",
             500: "Internal Server Error",
         },
@@ -478,7 +473,8 @@ class AuthenticationViewSet(ViewSet):
     @action(detail=False, methods=["post"])
     def set_new_password(self, request):
         """
-        Sets a new password for the user using a UID and token from a reset email.
+        Sets a new password for the user using email, code, and new password.
+        This endpoint is for users who have forgotten their password and are using a reset code.
         """
         serializer = SetNewPasswordSerializer(data=request.data)
         if not serializer.is_valid():
@@ -489,27 +485,22 @@ class AuthenticationViewSet(ViewSet):
             )
 
         validated_data = cast(dict, serializer.validated_data)
-        uidb64 = validated_data["uidb64"]
-        token = validated_data["token"]
+        user = validated_data["user"]
         new_password = validated_data["new_password"]
 
         try:
-            uid = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, ObjectDoesNotExist):
-            user = None
-
-        if user is not None and PasswordResetTokenGenerator().check_token(user, token):
             user.set_password(new_password)
+            user.password_reset_code = None  # Clear the reset code after successful password change
             user.save()
             return self._success_response(
                 message="Password set successfully.",
                 status_code=status.HTTP_200_OK,
             )
-        else:
+        except Exception as e:
+            logging.error(f"Error setting new password for user {user.email}: {str(e)}", exc_info=True)
             return self._error_response(
-                message="The reset link is invalid or has expired.",
-                status_code=status.HTTP_400_BAD_REQUEST,
+                message="An error occurred while setting the new password.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
     @swagger_auto_schema(

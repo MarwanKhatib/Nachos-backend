@@ -118,10 +118,10 @@ def create_user_suggestions(user_id):
         return False
 
 
-def send_password_reset_email(email, uidb64, token):
-    """Send password reset email asynchronously"""
+def send_password_reset_code_email(email, code):
+    """Send password reset code email asynchronously"""
     try:
-        logger.info(f"Starting password reset email process for {email}")
+        logger.info(f"Starting password reset code email process for {email}")
         
         email_user = config("EMAIL_HOST_USER", default=None)
         email_password = config("EMAIL_HOST_PASSWORD", default=None)
@@ -141,15 +141,11 @@ def send_password_reset_email(email, uidb64, token):
             timeout=30
         )
         
-        # Construct the reset link (adjust domain as needed)
-        # In a production environment, this should be your frontend URL
-        reset_link = f"http://localhost:3000/reset-password/{uidb64}/{token}/" 
-        
         contents = f"""
         <p>Hello,</p>
         <p>You are receiving this email because you requested a password reset for your account.</p>
-        <p>Please click on the following link to reset your password:</p>
-        <p><a href="{reset_link}">Reset your password</a></p>
+        <p>Your password reset code is: <strong>{code}</strong></p>
+        <p>Please use this code to reset your password.</p>
         <p>If you did not request a password reset, please ignore this email.</p>
         <p>Thank you,</p>
         <p>The Nachos Team</p>
@@ -162,9 +158,9 @@ def send_password_reset_email(email, uidb64, token):
             prettify_html=True
         )
         
-        logger.info(f"Password reset email sent successfully to {email}")
+        logger.info(f"Password reset code email sent successfully to {email}")
         return True
             
     except Exception as e:
-        logger.error(f"Error sending password reset email to {email}: {str(e)}", exc_info=True)
+        logger.error(f"Error sending password reset code email to {email}: {str(e)}", exc_info=True)
         return False

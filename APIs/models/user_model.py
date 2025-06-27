@@ -33,6 +33,7 @@ class User(AbstractUser):
     # Email verification fields
     auth_key = models.CharField(max_length=6, blank=True, null=True)
     is_email_verified = models.BooleanField(default=False)
+    password_reset_code = models.CharField(max_length=6, blank=True, null=True) # New field for password reset code
 
     # Override username field to make it unique
     username = models.CharField(
@@ -84,3 +85,9 @@ class User(AbstractUser):
             self.save()
             return True
         return False
+
+    def generate_password_reset_code(self):
+        """Generate a new 6-digit password reset code"""
+        self.password_reset_code = "".join(random.choices("0123456789", k=6))
+        self.save()
+        return self.password_reset_code

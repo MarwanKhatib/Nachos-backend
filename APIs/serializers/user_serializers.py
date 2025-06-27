@@ -11,6 +11,7 @@ import logging
 from typing import cast, Type # Import Type for type hinting
 
 from APIs.models import Genre, User
+from django.contrib.auth.hashers import check_password
 
 
 class RegisterUserSerializer(serializers.Serializer):
@@ -201,14 +202,29 @@ class SetNewPasswordSerializer(serializers.Serializer):
     """
     Serializer for setting a new password after a reset request.
     """
-    uidb64 = serializers.CharField(required=True)
-    token = serializers.CharField(required=True)
+    email = serializers.EmailField(required=True)
+    code = serializers.CharField(max_length=6, required=True)
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)
 
     def validate(self, attrs):
-        if attrs['new_password'] != attrs['confirm_password']:
+        email = attrs.get('email')
+        code = attrs.get('code')
+        new_password = attrs.get('new_password')
+        confirm_password = attrs.get('confirm_password')
+
+        if new_password != confirm_password:
             raise serializers.ValidationError({"new_password": "New passwords must match."})
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "User with this email does not exist."})
+
+        if user.password_reset_code != code:
+            raise serializers.ValidationError({"code": "Invalid password reset code."})
+
+        attrs['user'] = user
         return attrs
 
 
