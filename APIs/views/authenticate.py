@@ -44,7 +44,7 @@ from APIs.tasks import create_user_suggestions, send_verification_email, send_pa
 class AuthenticationViewSet(ViewSet):
     """ViewSet for handling authentication-related operations."""
 
-    authentication_classes = [JWTAuthentication]
+    authentication_classes = [] # No JWT authentication required for this viewset
     permission_classes = [AllowAny]
 
     def _success_response(
@@ -144,7 +144,7 @@ class AuthenticationViewSet(ViewSet):
             500: "Internal Server Error",
         },
     )
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["post"], authentication_classes=[])
     def verify(self, request):
         """
         Verifies a user's email address using a verification code.
@@ -254,7 +254,7 @@ class AuthenticationViewSet(ViewSet):
             500: "Internal Server Error",
         },
     )
-    @action(detail=False, methods=["post"])
+    @action(detail=False, methods=["post"], authentication_classes=[])
     def login(self, request):
         """
         Authenticates a user and returns JWT access and refresh tokens.
@@ -538,9 +538,9 @@ class AuthenticationViewSet(ViewSet):
             # Attempt to get the OutstandingToken and blacklist it directly
             try:
                 token = RefreshToken(refresh_token_string)
-                outstanding_token = OutstandingToken.objects.get(token=token.token) # Use token.token to get the JTI
-                BlacklistedToken.objects.get_or_create(token=outstanding_token)
-            except OutstandingToken.DoesNotExist:
+                outstanding_token = OutstandingToken.objects.get(token=token.token) # Use token.token to get the JTI # type: ignore
+                BlacklistedToken.objects.get_or_create(token=outstanding_token) # type: ignore
+            except OutstandingToken.DoesNotExist: # type: ignore
                 raise TokenError("Token not found or already blacklisted.")
             except TokenError:
                 raise TokenError("Invalid refresh token.")
