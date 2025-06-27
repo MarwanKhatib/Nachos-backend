@@ -36,7 +36,7 @@ class MovieSerializer(serializers.Serializer):
     description = serializers.CharField()
     trailer = serializers.CharField()
     poster = serializers.CharField()
-    language = serializers.IntegerField()
+    language = serializers.CharField(source='language.name', allow_null=True, required=False)
 
     def create(self, validated_data):
         """Create and return a new movie instance"""
@@ -171,7 +171,6 @@ class RateMovieSerializer(serializers.Serializer):
 
     def update(self, instance, validated_data):
         """Update and return an existing rating"""
-        instance.movie_id = validated_data.get("movie_id", instance.movie_id)
         instance.rate = validated_data.get("rate", instance.rate)
         return instance
 

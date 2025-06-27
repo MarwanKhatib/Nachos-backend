@@ -1,9 +1,13 @@
 from APIs.models.movie_model import Movie
 from APIs.models.movie_genre_model import MovieGenre
-from APIs.models.community_model import UserGenre, UserSuggestionList
+from APIs.models.community_model import UserGenre, UserSuggestionList, UserMovieSuggestion # Import new model
 from APIs.models.user_model import User
 from django.db import transaction
 from APIs.utils.suggestion_helpers.genre_calculator import genres_delta
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 
 def create_initial_movie_suggestions(user):
@@ -14,9 +18,11 @@ def create_initial_movie_suggestions(user):
     suggestions_to_create = []
     for movie in movies:
         suggestions_to_create.append(
-            UserSuggestionList(user=user, movie=movie, total=0, is_watched=False)
+            UserMovieSuggestion(user=user, movie=movie, total=0, is_watched=False)
         )
-    UserSuggestionList.objects.bulk_create(suggestions_to_create) # type: ignore
+    UserMovieSuggestion.objects.bulk_create(suggestions_to_create) # type: ignore
+    # Ensure UserSuggestionList header exists for the user
+    UserSuggestionList.objects.get_or_create(user=user) # type: ignore
 
 
 def update_suggestions(user_id, genre_ids):
@@ -24,6 +30,9 @@ def update_suggestions(user_id, genre_ids):
     Update movie suggestions based on user's genre preferences, appending new genres.
     Uses bulk operations for efficiency.
     """
+    start_time = time.time()
+    logger.info(f"Starting update_suggestions for user {user_id}")
+
     with transaction.atomic(): # type: ignore
         user = User.objects.get(id=user_id) # type: ignore
 
@@ -36,26 +45,6 @@ def update_suggestions(user_id, genre_ids):
         # Combine the existing genre IDs with the new genre IDs, removing duplicates
         combined_genre_ids = list(set(existing_genre_ids + genre_ids))
 
-        # Prefetch MovieGenre objects for all suggestions
-        user_suggestions = UserSuggestionList.objects.filter( # type: ignore
-            user=user
-        ).prefetch_related("movie__moviegenre_set")
-
-        # Calculate and update points for existing suggestions based on old genres
-        # This part still requires iterating, but we'll collect updates for bulk_update
-        suggestions_to_update = []
-        user_old_genres_objects = UserGenre.objects.filter(user=user) # type: ignore # Get objects for genres_delta
-        for suggestion in user_suggestions:
-            cur_movie_genres = suggestion.movie.moviegenre_set.all()
-            # Subtract points based on old genres
-            old_delta = genres_delta(user_old_genres_objects, cur_movie_genres)
-            suggestion.total -= old_delta
-            suggestions_to_update.append(suggestion)
-        
-        # Perform bulk update for subtracting old points
-        if suggestions_to_update:
-            UserSuggestionList.objects.bulk_update(suggestions_to_update, ['total']) # type: ignore
-
         # Clear old genres and add new ones using bulk_create
         UserGenre.objects.filter(user=user).delete() # type: ignore
         new_user_genres = []
@@ -63,25 +52,27 @@ def update_suggestions(user_id, genre_ids):
             new_user_genres.append(UserGenre(user=user, genre_id=genre_id))
         UserGenre.objects.bulk_create(new_user_genres) # type: ignore
 
-        # Recalculate and update points based on new combined genres
-        # This part still requires iterating, but we'll collect updates for bulk_update
-        suggestions_to_update_final = []
-        # Re-fetch user_suggestions if the previous prefetch_related might be stale due to genre changes
-        # Or ensure genres_delta can work with just IDs if that's more efficient
-        # For now, assuming genres_delta can work with combined_genre_ids directly
-        
-        # Re-fetch user_suggestions to ensure they are up-to-date after genre changes
-        user_suggestions_re_fetched = UserSuggestionList.objects.filter( # type: ignore
+        # Fetch all user's movie suggestions
+        user_movie_suggestions = UserMovieSuggestion.objects.filter( # type: ignore
             user=user
         ).prefetch_related("movie__moviegenre_set")
 
-        for suggestion in user_suggestions_re_fetched:
+        suggestions_to_update = []
+        for suggestion in user_movie_suggestions:
             cur_movie_genres = suggestion.movie.moviegenre_set.all()
-            # Add points based on new combined genres
-            new_delta = genres_delta(combined_genre_ids, list(cur_movie_genres))
-            suggestion.total = new_delta # Set to new total, not add to existing
-            suggestions_to_update_final.append(suggestion)
+            # Recalculate points based on new combined genres
+            # genres_delta now returns a raw weighted sum. Apply a multiplier for impact.
+            raw_genre_score = genres_delta(combined_genre_ids, list(cur_movie_genres))
+            # A multiplier (e.g., 10 or 100) can be adjusted based on desired score range
+            # and how much genre similarity should contribute to the total.
+            # Let's use a multiplier of 10 for now.
+            new_total = raw_genre_score * 10
+            suggestion.total = new_total
+            suggestions_to_update.append(suggestion)
         
-        # Perform final bulk update for new points
-        if suggestions_to_update_final:
-            UserSuggestionList.objects.bulk_update(suggestions_to_update_final, ['total']) # type: ignore
+        # Perform bulk update for new points
+        if suggestions_to_update:
+            UserMovieSuggestion.objects.bulk_update(suggestions_to_update, ['total']) # type: ignore
+    
+    end_time = time.time()
+    logger.info(f"Finished update_suggestions for user {user_id} in {end_time - start_time:.2f} seconds.")

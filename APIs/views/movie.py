@@ -132,10 +132,10 @@ def get_movie(request, movie_id):
 
 @swagger_auto_schema(
     method="post",
-    operation_description="Rate a movie and update suggestions",
+    operation_description="Rate a movie and update suggestions. The movie ID and rating are provided in the request body.",
     operation_summary="Rate a movie",
     security=[{"Bearer": []}],
-    request_body=RateMovieSerializer,
+    request_body=RateMovieSerializer, # Use the serializer directly for the request body
     responses={
         200: openapi.Response(
             "Success",
@@ -180,14 +180,16 @@ def get_movie(request, movie_id):
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def rate_movie(request, movie_id):
-    logger.info(f"User {request.user.id} attempting to rate movie {movie_id}")
+def rate_movie(request): # Removed movie_id from function parameters
+    logger.info(f"User {request.user.id} attempting to rate movie.")
     serializer = RateMovieSerializer(data=request.data)
     if not serializer.is_valid():
         logger.warning(f"Invalid data for rate_movie: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     user = request.user
+    movie_id = cast(dict, serializer.validated_data)["movie_id"] # Get movie_id from validated data
+    new_rating = cast(dict, serializer.validated_data)["rate"]
 
     try:
         movie = Movie.objects.get(id=movie_id)
@@ -200,8 +202,6 @@ def rate_movie(request, movie_id):
             {"error": "Internal server error."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-
-    new_rating = cast(dict, serializer.validated_data)["rate"]
 
     try:
         watched_movie, created = UserWatchedMovie.objects.get_or_create(

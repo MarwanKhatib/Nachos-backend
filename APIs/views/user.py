@@ -28,7 +28,7 @@ from typing import cast
 
 from APIs.models.user_model import User
 from APIs.models.movie_model import Movie
-from APIs.models.community_model import UserSuggestionList
+from APIs.models.community_model import UserSuggestionList, UserMovieSuggestion # Import UserMovieSuggestion
 from APIs.serializers.user_serializers import RegisterUserSerializer, UserProfileSerializer
 from APIs.serializers.movie_serializers import MovieSerializer
 
@@ -191,9 +191,75 @@ class UserViewSet(ViewSet):
             )
 
     @swagger_auto_schema(
-        operation_description="Retrieve personalized movie suggestions for the authenticated user.",
+        operation_description="Retrieve a random selection of the top 10 personalized movie suggestions for the authenticated user.",
+        operation_summary="Get top 10 movie suggestions",
+        security=[{"Bearer": []}],
+        responses={
+            200: MovieSerializer(many=True),
+            401: "Unauthorized",
+            404: "No suggestions found",
+            500: "Internal Server Error",
+        },
+        tags=["Users"],
+    )
+    @action(detail=False, methods=["get"], url_path="top-10-suggestions")
+    def get_top_10_suggestions(self, request):
+        """
+        Retrieves a random selection of the top 10 personalized movie suggestions for the authenticated user.
+        """
+        user = request.user
+        logger = logging.getLogger(__name__)
+        logger.info(f"Attempting to retrieve top 10 suggestions for user: {user.id}")
+
+        try:
+            # Retrieve movie suggestions, ordered by 'total' score, excluding watched movies
+            # Fetch a larger pool (e.g., top 50) to select 10 random ones from
+            top_suggestions_pool = UserMovieSuggestion.objects.select_related('movie').filter( # type: ignore
+                user=user,
+                is_watched=False
+            ).order_by('-total')[:50] # Take top 50 for randomness
+
+            if not top_suggestions_pool.exists():
+                logger.info(f"No top suggestions found for user {user.id} or all are watched.")
+                return self._error_response(
+                    message="No top suggestions found for this user.",
+                    status_code=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Randomly select up to 10 movies from the pool
+            import random
+            num_suggestions_to_return = min(10, len(top_suggestions_pool))
+            random_suggestions = random.sample(list(top_suggestions_pool), num_suggestions_to_return)
+
+            suggested_movies = [ums.movie for ums in random_suggestions]
+
+            serializer = MovieSerializer(suggested_movies, many=True)
+            logger.info(f"Successfully retrieved {len(suggested_movies)} top suggestions for user {user.id}.")
+            return self._success_response(
+                data=serializer.data,
+                message="Top 10 movie suggestions retrieved successfully.",
+                status_code=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            logger.error(f"Error retrieving top 10 suggestions for user {user.id}: {e}", exc_info=True)
+            return self._error_response(
+                message="An error occurred while retrieving top 10 suggestions.",
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @swagger_auto_schema(
+        operation_description="Retrieve personalized movie suggestions for the authenticated user. Supports pagination via an optional 'limit' query parameter.",
         operation_summary="Get user movie suggestions",
         security=[{"Bearer": []}],
+        manual_parameters=[
+            openapi.Parameter(
+                'limit',
+                openapi.IN_QUERY,
+                description="Optional: Limit the number of suggestions returned.",
+                type=openapi.TYPE_INTEGER,
+                required=False
+            )
+        ],
         responses={
             200: MovieSerializer(many=True),
             401: "Unauthorized",
@@ -206,31 +272,44 @@ class UserViewSet(ViewSet):
     def get_suggestions(self, request):
         """
         Retrieves personalized movie suggestions for the authenticated user.
+        Supports an optional 'limit' query parameter for pagination.
         """
         user = request.user
         logger = logging.getLogger(__name__)
         logger.info(f"Attempting to retrieve suggestions for user: {user.id}")
 
         try:
-            # Get the user's suggestion list
-            user_suggestion_list = UserSuggestionList.objects.filter(user=user).first() # type: ignore
+            limit = request.query_params.get('limit')
+            
+            # Base queryset for movie suggestions
+            queryset = UserMovieSuggestion.objects.select_related('movie', 'movie__language').filter( # type: ignore
+                user=user,
+                is_watched=False # Exclude watched movies from suggestions
+            ).order_by('-total')
 
-            if not user_suggestion_list:
-                logger.info(f"No suggestion list found for user {user.id}.")
+            if limit:
+                try:
+                    limit = int(limit)
+                    if limit <= 0:
+                        raise ValueError("Limit must be a positive integer.")
+                    queryset = queryset[:limit]
+                except ValueError as e:
+                    return self._error_response(
+                        message=f"Invalid limit parameter: {e}",
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            if not queryset.exists():
+                logger.info(f"No movie suggestions found for user {user.id} or all are watched.")
                 return self._error_response(
                     message="No suggestions found for this user.",
                     status_code=status.HTTP_404_NOT_FOUND,
                 )
 
-            # The 'suggestions' field is a ManyToManyField to Movie
-            suggested_movies = user_suggestion_list.suggestions.all()
+            user_movie_suggestions = queryset
 
-            if not suggested_movies.exists():
-                logger.info(f"Suggestion list exists but is empty for user {user.id}.")
-                return self._error_response(
-                    message="No suggestions found for this user.",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
+            # Extract the Movie objects from UserMovieSuggestion instances
+            suggested_movies = [ums.movie for ums in user_movie_suggestions]
 
             serializer = MovieSerializer(suggested_movies, many=True)
             logger.info(f"Successfully retrieved {len(suggested_movies)} suggestions for user {user.id}.")
@@ -607,8 +686,8 @@ class UserViewSet(ViewSet):
         if serializer.is_valid():
             user = serializer.save()
             user = cast(User, user)
-            user.is_superuser = True
-            user.is_staff = True
+            user.is_superuser = True # type: ignore
+            user.is_staff = True # type: ignore
             user.is_active = True
             user.is_email_verified = True # Set to True as admin is creating it
             user.save()
@@ -645,7 +724,7 @@ class UserViewSet(ViewSet):
         if serializer.is_valid():
             user = serializer.save()
             user = cast(User, user)
-            user.is_staff = True
+            user.is_staff = True # type: ignore
             user.is_active = True
             user.is_email_verified = True # Set to True as admin is creating it
             user.save()

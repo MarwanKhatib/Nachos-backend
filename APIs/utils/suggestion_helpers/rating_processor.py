@@ -1,73 +1,78 @@
 import os
 from django.conf import settings
 from APIs.models.related_movie_model import RelatedMovie
-from APIs.models.community_model import UserSuggestionList
-from django.db import transaction # Import transaction for atomic operations
+from APIs.models.community_model import UserMovieSuggestion, UserGenre
+from APIs.models.movie_model import Movie
+from APIs.models.movie_genre_model import MovieGenre
+from django.db import transaction
+from APIs.utils.suggestion_helpers.suggestion_manager import update_suggestions
+from APIs.utils.suggestion_helpers.genre_calculator import genres_delta # Import genres_delta
 
 def update_suggestions_by_rate(user_id, movie_id, rating, subtract=False):
     """
     Update movie suggestions based on user's movie rating.
-    Uses bulk operations for efficiency.
+    This function will mark the rated movie as watched and adjust the suggestion scores
+    of other movies based on the rated movie's genres and the given rating.
     """
-    # Step 1: Construct the file path for the rating
-    file_name = f"{rating}.txt"
-    file_path = os.path.join(settings.BASE_DIR, 'APIs/utils', file_name)
-
-    # Step 2: Check if the file exists
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"File for rating {rating} not found.")
-
-    # Step 3: Read the points from the file
-    with open(file_path, 'r') as file:
-        points_list = [int(line.strip()) for line in file if line.strip().isdigit()]
-
-    # Step 4: Get related movies for the given movie_id
-    related_movies = RelatedMovie.objects.filter(movie_id=movie_id).order_by('priority') # type: ignore
-
-    # Step 5: Ensure the number of points matches the number of related movies
-    if len(points_list) < len(related_movies):
-        raise ValueError("Not enough points in the file for the number of related movies.")
-
-    # Step 6: Update the total field in UserSuggestionList for the user
-    with transaction.atomic():  # type: ignore
-        # Get existing suggestions for the user and related movies
-        related_movie_ids = [rm.related_id for rm in related_movies]
-        existing_suggestions_queryset = UserSuggestionList.objects.filter(  # type: ignore
-            user_id=user_id, movie_id__in=related_movie_ids
+    with transaction.atomic(): # type: ignore
+        # 1. Mark the rated movie as watched
+        user_movie_suggestion, created = UserMovieSuggestion.objects.get_or_create( # type: ignore
+            user_id=user_id,
+            movie_id=movie_id,
+            defaults={'total': 0, 'is_watched': True}
         )
-        # Create a dictionary for efficient lookup by movie_id
-        existing_suggestions = {
-            suggestion.movie_id: suggestion for suggestion in existing_suggestions_queryset
-        }
+        if not created:
+            user_movie_suggestion.is_watched = True
+            user_movie_suggestion.save()
 
-        suggestions_to_create = []
+        # 2. Get genres of the rated movie
+        rated_movie_genres = MovieGenre.objects.filter(movie_id=movie_id).values_list('genre_id', flat=True) # type: ignore
+        rated_movie_genre_ids = list(rated_movie_genres)
+
+        # 3. Adjust suggestion scores for other unwatched movies based on the rating
+        # Get all unwatched movie suggestions for the user, excluding the just-rated movie
+        other_movie_suggestions = UserMovieSuggestion.objects.select_related('movie').filter( # type: ignore
+            user_id=user_id,
+            is_watched=False
+        ).exclude(movie_id=movie_id)
+
+        # Fetch all genres for the relevant movies in one go
+        movie_ids_to_process = [s.movie_id for s in other_movie_suggestions]
+        movie_genres_data = MovieGenre.objects.filter(movie_id__in=movie_ids_to_process).values('movie_id', 'genre_id') # type: ignore
+        
+        # Organize genres by movie_id for easy lookup
+        movie_genres_map = {}
+        for mg in movie_genres_data:
+            movie_genres_map.setdefault(mg['movie_id'], []).append(mg['genre_id'])
+
         suggestions_to_update = []
+        # Determine the influence factor based on the rating
+        # Ratings above 2.5 (mid-point) will boost, below will penalize
+        rating_influence_factor = (rating - 2.5) / 2.5 # Normalize to -1 to 1 range approximately
 
-        for i, related_movie in enumerate(related_movies):
-            point = points_list[i]
-            movie_id_current = related_movie.related_id
+        for suggestion in other_movie_suggestions:
+            current_movie_genre_ids = movie_genres_map.get(suggestion.movie_id, [])
 
-            if movie_id_current in existing_suggestions:
-                suggestion = existing_suggestions[movie_id_current]
-                if subtract:
-                    suggestion.total -= point
-                else:
-                    suggestion.total += point
-                suggestions_to_update.append(suggestion)
-            else:
-                # Only create if it doesn't exist
-                new_total = -point if subtract else point
-                suggestions_to_create.append(
-                    UserSuggestionList(
-                        user_id=user_id,
-                        movie_id=movie_id_current,
-                        total=new_total,
-                        is_watched=False,
-                    )
-                )
+            # Calculate genre similarity between the rated movie and the current movie
+            # Use rated_movie_genre_ids as list1_input (user's "preference" for this calculation)
+            # and current_movie_genre_ids as list2_input
+            genre_similarity_score = genres_delta(rated_movie_genre_ids, current_movie_genre_ids)
 
-        if suggestions_to_create:
-            UserSuggestionList.objects.bulk_create(suggestions_to_create)  # type: ignore
+            # Apply the influence of the rating to the suggestion's total score
+            # The impact is proportional to the genre similarity and the rating influence factor
+            # A higher genre_similarity_score means more impact
+            # Apply the same multiplier as in update_suggestions for consistency
+            impact = int(genre_similarity_score * rating_influence_factor * 10)
+
+            suggestion.total += impact
+            # Ensure total doesn't go below 0. Max cap can be added if scores grow too large.
+            suggestion.total = max(0, suggestion.total)
+
+            suggestions_to_update.append(suggestion)
 
         if suggestions_to_update:
-            UserSuggestionList.objects.bulk_update(suggestions_to_update, ["total"])  # type: ignore
+            UserMovieSuggestion.objects.bulk_update(suggestions_to_update, ['total']) # type: ignore
+
+        # Removed the full recalculation based on user's overall genre preferences
+        # to improve performance on each movie rating. The full recalculation
+        # will still occur when the user explicitly sets their preferred genres.

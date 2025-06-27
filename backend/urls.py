@@ -37,7 +37,7 @@ urlpatterns = [
         path("profile/", include(user_urls)),
         path("movies/", include([
             path("", include(movie_urls_file.movie_urls)),
-            path("rate/<int:movie_id>/", movie_views.rate_movie, name="rate-movie"),
+            path("rate/", movie_views.rate_movie, name="rate-movie"),
         ])),
         path("genres/", include(genres_urls)),
         path("watchlist/", include(watchlist_urls)),

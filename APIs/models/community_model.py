@@ -27,8 +27,20 @@ class UserWatchlist(models.Model):
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE)
     add_date = models.DateTimeField(auto_now_add=True)
 
+# New intermediary model for UserMovieSuggestion
+class UserMovieSuggestion(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="movie_suggestions")
+    movie = models.ForeignKey(Movie, on_delete=models.CASCADE, related_name="user_suggestions")
+    total = models.IntegerField(default=0) # This will store the calculated suggestion score
+    is_watched = models.BooleanField(default=False) # To track if the user has watched this suggested movie
+
+    class Meta:
+        unique_together = ("user", "movie")
+
+# Modify UserSuggestionList to use the new intermediary model
 class UserSuggestionList(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    movie = models.ForeignKey(Movie, on_delete=models.CASCADE)
-    total = models.IntegerField()
-    is_watched = models.BooleanField(default=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="suggestion_list_header")
+    # The actual suggestions are now managed through UserMovieSuggestion
+    # We can keep this model as a header or remove it if not strictly necessary
+    # For now, I'll keep it as a header, but the core logic will use UserMovieSuggestion
+    created_at = models.DateTimeField(auto_now_add=True)
