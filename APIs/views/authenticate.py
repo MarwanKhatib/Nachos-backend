@@ -436,10 +436,14 @@ class AuthenticationViewSet(ViewSet):
         email = cast(dict, serializer.validated_data)["email"]
         try:
             user = User.objects.get(email=email)
+            logging.info(f"User found for password reset: {email}")
+            
             code = user.generate_password_reset_code()
+            logging.info(f"Generated password reset code for {email}: {code}")
 
             # Send email asynchronously
             threading.Thread(target=send_password_reset_code_email, args=[email, code]).start()
+            logging.info(f"Password reset email task queued for {email}")
 
             return self._success_response(
                 message="Password reset code sent successfully. Please check your inbox.",
@@ -448,15 +452,15 @@ class AuthenticationViewSet(ViewSet):
         except ObjectDoesNotExist:
             # For security reasons, always return a success message even if the user doesn't exist.
             # This prevents enumeration of existing user accounts.
-            logging.warning(f"Password reset requested for non-existent email: {email}")
+            logging.warning(f"Password reset requested for non-existent email: {email}. Returning success for security.")
             return self._success_response(
                 message="If an account with that email exists, a password reset code has been sent.",
                 status_code=status.HTTP_200_OK,
             )
         except Exception as e:
-            logging.error(f"Error requesting password reset for {email}: {str(e)}", exc_info=True)
+            logging.error(f"Critical error in request_password_reset for {email}: {str(e)}", exc_info=True)
             return self._error_response(
-                message="An error occurred during password reset request.",
+                message="An unexpected error occurred during password reset request. Please try again later.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
