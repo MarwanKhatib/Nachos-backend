@@ -16,6 +16,8 @@ from django.db.models.manager import BaseManager # Keep BaseManager for CustomUs
 from APIs.models import Genre, User
 from APIs.managers import CustomUserManager # Import CustomUserManager
 from django.contrib.auth.hashers import check_password
+from django.db.models import Manager # Import Manager for type hinting
+from APIs.serializers.movie_serializers import MovieWatchlistSerializer # Import MovieWatchlistSerializer
 
 
 class RegisterUserSerializer(serializers.Serializer):
@@ -25,7 +27,7 @@ class RegisterUserSerializer(serializers.Serializer):
     email = serializers.EmailField(
         validators=[
             UniqueValidator(
-                queryset=User.objects.all(),
+                queryset=cast(CustomUserManager, User.objects).all(),
                 message="A user with this email already exists.",
             )
         ],
@@ -34,7 +36,7 @@ class RegisterUserSerializer(serializers.Serializer):
     username = serializers.CharField(
         validators=[
             UniqueValidator(
-                queryset=User.objects.all(),
+                queryset=cast(CustomUserManager, User.objects).all(),
                 message="A user with this username already exists.",
             )
         ],
@@ -66,7 +68,7 @@ class RegisterUserSerializer(serializers.Serializer):
         birth_date = validated_data["birth_date"]
         profile_picture = validated_data.get("profile_picture") # Get profile_picture
 
-        user = User.objects.register_user(
+        user = cast(CustomUserManager, User.objects).register_user(
             email=email,
             username=username,
             password=password,
@@ -93,10 +95,16 @@ class UserAdminSerializer(serializers.ModelSerializer):
     Serializer for admin user management.
     Includes all fields for detailed user information and management.
     """
+    watchlist = MovieWatchlistSerializer(many=True, read_only=True) # Nested serializer for watchlist
     class Meta:
         model = User
-        fields = ['email', 'username', 'password', 'birth_date'] # Only fields that are explicitly provided in the request body
-        extra_kwargs = {'password': {'write_only': True}} # Ensure password is write-only
+        fields = [
+            'id', 'email', 'username', 'first_name', 'last_name', 'birth_date',
+            'watched_no', 'join_date', 'profile_picture', 'is_email_verified',
+            'is_staff', 'is_superuser', 'is_active', 'watchlist', 'password'
+        ]
+        read_only_fields = ['id', 'join_date', 'watched_no', 'is_email_verified', 'is_staff', 'is_superuser', 'is_active']
+        extra_kwargs = {'password': {'write_only': True, 'required': False}} # Ensure password is write-only and not always required
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -117,6 +125,9 @@ class UserAdminSerializer(serializers.ModelSerializer):
             username=validated_data['username'],
             email=validated_data['email'],
             birth_date=validated_data['birth_date'],
+            first_name=validated_data.get('first_name'),
+            last_name=validated_data.get('last_name'),
+            profile_picture=validated_data.get('profile_picture'),
             is_superuser=is_superuser,
             is_staff=is_staff,
             is_active=is_active,
@@ -174,7 +185,7 @@ class VerifyEmailSerializer(serializers.Serializer):
         email = attrs.get("email")
         key = attrs.get("key")
         try:
-            user = User.objects.get(email=email)
+            user = cast(CustomUserManager, User.objects).get(email=email)
         except User.DoesNotExist:
             logging.error(f"Verification failed: User with email {email} does not exist.")
             raise serializers.ValidationError({"email": "User with this email does not exist."})
@@ -198,7 +209,7 @@ class SelectGenresSerializer(serializers.Serializer):
     genre_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
 
     def validate_genre_ids(self, value):
-        valid_genres = Genre.objects.filter(id__in=value)
+        valid_genres = cast(Manager, Genre.objects).filter(id__in=value)
         if len(valid_genres) != len(value):
             raise serializers.ValidationError("One or more genre IDs are invalid.")
         return value
@@ -230,7 +241,7 @@ class ResendVerificationEmailSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         try:
-            user = User.objects.get(email=value)
+            user = cast(CustomUserManager, User.objects).get(email=value)
             if user.is_email_verified:
                 raise serializers.ValidationError("Email is already verified.")
             return value
@@ -246,7 +257,7 @@ class RequestPasswordResetSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         try:
-            User.objects.get(email=value)
+            cast(CustomUserManager, User.objects).get(email=value)
         except User.DoesNotExist:
             # We don't want to expose whether an email exists for security reasons
             # So, we return a success message even if the user doesn't exist.
@@ -274,7 +285,7 @@ class SetNewPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({"new_password": "New passwords must match."})
 
         try:
-            user = User.objects.get(email=email)
+            user = cast(CustomUserManager, User.objects).get(email=email)
         except User.DoesNotExist:
             raise serializers.ValidationError({"email": "User with this email does not exist."})
 
@@ -300,7 +311,7 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
             if not email or not password:
                 raise ValidationError("Email and password are required.")
             try:
-                user = User.objects.get(email=email)
+                user = cast(CustomUserManager, User.objects).get(email=email)
             except User.DoesNotExist:
                 logging.error(f"No user found with email: {email}")
                 raise ValidationError("No user found with this email.")

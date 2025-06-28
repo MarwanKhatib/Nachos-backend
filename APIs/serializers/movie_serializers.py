@@ -6,7 +6,7 @@ ratings, comments and other movie-related structures.
 
 from rest_framework import serializers
 
-from APIs.models import MovieCommunity
+from APIs.models import MovieCommunity, Movie # Import Movie model
 
 
 class PairStructuresSerializer(serializers.Serializer):
@@ -129,6 +129,16 @@ class WatchlistItemSerializer(serializers.Serializer):
     """
 
     movie_id = serializers.IntegerField(min_value=1)
+
+
+class MovieWatchlistSerializer(serializers.ModelSerializer):
+    """
+    Serializer for movies in a user's watchlist.
+    Includes essential movie information.
+    """
+    class Meta:
+        model = Movie # Corrected to Movie model
+        fields = ['id', 'name', 'poster'] # Include relevant fields for watchlist display
 
     def validate(self, attrs):
         """Validate watchlist item data"""
