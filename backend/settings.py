@@ -213,7 +213,9 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": 10, # You can adjust this value as needed
+    "PAGE_SIZE": 10,  # Default page size
+    "PAGE_SIZE_QUERY_PARAM": "page_size",  # Allow client to override page size
+    "MAX_PAGE_SIZE": 100,  # Maximum page size allowed
 }
 
 

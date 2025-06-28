@@ -14,6 +14,8 @@ from rest_framework import status, generics, filters
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination # Import PageNumberPagination
+import django_filters
 from django_filters.rest_framework import DjangoFilterBackend
 
 
@@ -240,16 +242,49 @@ def rate_movie(request): # Removed movie_id from function parameters
         return Response({"error": "Internal server error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class MoviePageNumberPagination(PageNumberPagination):
+    page_size = 10 # Set default page size
+    page_size_query_param = 'page_size' # Allow client to override page size
+    max_page_size = 100 # Maximum page size allowed
+
 class MovieListView(generics.ListAPIView):
-    queryset = Movie.objects.all()
     serializer_class = MovieSerializer
     permission_classes = [AllowAny]  # Allow unauthenticated access for listing
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ["genres", "directors", "actors"]  # Assuming these are ManyToMany fields or similar
     search_fields = ["name", "description"]  # Search by movie name or description
+    pagination_class = MoviePageNumberPagination # Add pagination class
+
+    def get_queryset(self):
+        queryset = Movie.objects.all()
+        # Ensure distinct movies are counted, especially with many-to-many filters
+        return queryset.distinct()
+
+    class MovieFilter(django_filters.FilterSet):
+        genres = django_filters.CharFilter(field_name='moviegenre__genre__id', lookup_expr='in', distinct=True,
+                                          help_text="Filter by genre ID (e.g., ?genres=1,2)")
+        genres_name = django_filters.CharFilter(field_name='moviegenre__genre__name', lookup_expr='icontains', distinct=True,
+                                                help_text="Search by genre name (case-insensitive, e.g., ?genres_name=action)")
+        directors = django_filters.CharFilter(field_name='moviedirector__director__id', lookup_expr='in', distinct=True,
+                                             help_text="Filter by director ID (e.g., ?directors=1)")
+        directors_name = django_filters.CharFilter(field_name='moviedirector__director__name', lookup_expr='icontains', distinct=True,
+                                                  help_text="Search by director name (case-insensitive, e.g., ?directors_name=nolan)")
+        actors = django_filters.CharFilter(field_name='movieactor__actor__id', lookup_expr='in', distinct=True,
+                                          help_text="Filter by actor ID (e.g., ?actors=1)")
+        actors_name = django_filters.CharFilter(field_name='movieactor__actor__name', lookup_expr='icontains', distinct=True,
+                                               help_text="Search by actor name (case-insensitive, e.g., ?actors_name=tom%20hanks)")
+        language = django_filters.CharFilter(field_name='language__id', lookup_expr='in', distinct=True,
+                                             help_text="Filter by language ID (e.g., ?language=1)")
+        language_name = django_filters.CharFilter(field_name='language__name', lookup_expr='icontains', distinct=True,
+                                                  help_text="Search by language name (case-insensitive, e.g., ?language_name=english)")
+
+        class Meta:
+            model = Movie
+            fields = ['genres', 'genres_name', 'directors', 'directors_name', 'actors', 'actors_name', 'language', 'language_name']
+
+    filterset_class = MovieFilter
 
     @swagger_auto_schema(
-        operation_description="List all movies with optional search and filtering. Can search by name/description and filter by genre, director, or actor IDs.",
+        operation_description="List all movies with optional search and filtering. Can search by name/description and filter by genre, director, actor, or language IDs/names.",
         operation_summary="List movies",
         manual_parameters=[
             openapi.Parameter(
@@ -265,15 +300,45 @@ class MovieListView(generics.ListAPIView):
                 type=openapi.TYPE_STRING,
             ),
             openapi.Parameter(
+                "genres_name",
+                openapi.IN_QUERY,
+                description="Search by genre name (case-insensitive, e.g., ?genres_name=action)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
                 "directors",
                 openapi.IN_QUERY,
                 description="Filter by director ID (e.g., ?directors=1)",
                 type=openapi.TYPE_STRING,
             ),
             openapi.Parameter(
+                "directors_name",
+                openapi.IN_QUERY,
+                description="Search by director name (case-insensitive, e.g., ?directors_name=nolan)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
                 "actors",
                 openapi.IN_QUERY,
                 description="Filter by actor ID (e.g., ?actors=1)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                "actors_name",
+                openapi.IN_QUERY,
+                description="Search by actor name (case-insensitive, e.g., ?actors_name=tom%20hanks)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                "language",
+                openapi.IN_QUERY,
+                description="Filter by language ID (e.g., ?language=1)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                "language_name",
+                openapi.IN_QUERY,
+                description="Search by language name (case-insensitive, e.g., ?language_name=english)",
                 type=openapi.TYPE_STRING,
             ),
         ],
