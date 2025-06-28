@@ -301,7 +301,7 @@ class MovieCommentViewSet(ViewSet):
         manual_parameters=[
             openapi.Parameter(
                 "movie_id",
-                openapi.IN_PATH,
+                openapi.IN_QUERY,
                 description="ID of the movie to retrieve comments for.",
                 type=openapi.TYPE_INTEGER,
                 required=True,
@@ -309,15 +309,22 @@ class MovieCommentViewSet(ViewSet):
         ],
         responses={
             200: MovieReviewSerializer(many=True),
+            400: "Bad Request",
             404: "Movie not found",
             500: "Internal Server Error",
         },
         tags=["Movies"],
     )
-    def list(self, request, movie_id=None):
+    def list(self, request):
+        movie_id = request.query_params.get("movie_id")
+        if not movie_id:
+            return Response(
+                {"error": "Movie ID is required as a query parameter."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         try:
             movie = Movie.objects.get(id=movie_id)
-            comments = MovieComment.objects.filter(movie=movie)
+            comments = MovieComment.objects.filter(movie=movie).order_by('-created_at') # Order by creation date
             serializer = MovieReviewSerializer(comments, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Movie.DoesNotExist:

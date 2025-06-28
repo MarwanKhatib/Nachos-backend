@@ -56,8 +56,10 @@ class User(AbstractUser):
     first_name = models.CharField(max_length=150, null=True, blank=True)
     last_name = models.CharField(max_length=150, null=True, blank=True)
 
-    # Use email as the username field for authentication
+    # Add watchlist field
+    watchlist = models.ManyToManyField('APIs.Movie', related_name='users_watchlist', blank=True)
 
+    # Use email as the username field for authentication
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]
 

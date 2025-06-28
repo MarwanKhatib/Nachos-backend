@@ -8,7 +8,8 @@ from rest_framework.pagination import PageNumberPagination
 from APIs.models.movie_model import Movie
 from APIs.models.user_model import User
 from APIs.models.group_model import Group
-from APIs.serializers.user_serializers import UserAdminSerializer, RegisterUserSerializer # Import UserAdminSerializer and RegisterUserSerializer
+from APIs.models.genre_model import Genre # Import Genre model
+from APIs.serializers.user_serializers import UserAdminSerializer, RegisterUserSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,13 @@ class DashboardView(APIView):
             movie_count = Movie.objects.count()
             user_count = User.objects.count()
             group_count = Group.objects.count()
+            genre_count = Genre.objects.count() # Add genre count
 
             data = {
                 'movie_count': movie_count,
                 'user_count': user_count,
                 'group_count': group_count,
+                'genre_count': genre_count, # Include genre count in data
             }
             logger.info(f"Request by user {user_id} to {path} successful.")
             return Response(data, status=HTTP_200_OK)

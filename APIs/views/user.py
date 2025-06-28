@@ -28,9 +28,11 @@ from typing import cast
 
 from APIs.models.user_model import User
 from APIs.models.movie_model import Movie
-from APIs.models.community_model import UserSuggestionList, UserMovieSuggestion # Import UserMovieSuggestion
+from APIs.models.community_model import UserSuggestionList, UserMovieSuggestion, UserGenre # Import UserMovieSuggestion, UserGenre
+from APIs.models.movie_genre_model import MovieGenre # Import MovieGenre
 from APIs.serializers.user_serializers import RegisterUserSerializer, UserProfileSerializer
 from APIs.serializers.movie_serializers import MovieSerializer
+from APIs.utils.suggestion_helpers.genre_calculator import genres_delta # Import genres_delta
 
 
 class IsSuperUser(permissions.BasePermission):
@@ -219,24 +221,54 @@ class UserViewSet(ViewSet):
                 is_watched=False
             ).order_by('-total')[:50] # Take top 50 for randomness
 
-            if not top_suggestions_pool.exists():
-                logger.info(f"No top suggestions found for user {user.id} or all are watched.")
-                return self._error_response(
-                    message="No top suggestions found for this user.",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
+            # Check if the queryset is empty or contains only zero-total suggestions
+            if not top_suggestions_pool.exists() or all(s.total == 0 for s in top_suggestions_pool):
+                logger.info(f"No meaningful top 10 suggestions found for user {user.id}. Attempting genre-based or random fallback.")
+                
+                user_genres = UserGenre.objects.filter(user=user).values_list('genre_id', flat=True) # type: ignore
+                
+                if user_genres.exists():
+                    # If user has selected genres, suggest movies based on those genres
+                    all_movies = Movie.objects.all().prefetch_related('moviegenre_set') # type: ignore
+                    genre_based_suggestions = []
+                    for movie in all_movies:
+                        movie_genre_ids = [mg.genre_id for mg in movie.moviegenre_set.all()]
+                        score = genres_delta(list(user_genres), movie_genre_ids)
+                        if score > 0: # Only include movies with some genre match
+                            genre_based_suggestions.append((score, movie))
+                    
+                    # Sort by score (descending) and take the top 10
+                    genre_based_suggestions.sort(key=lambda x: x[0], reverse=True)
+                    suggested_movies = [movie for score, movie in genre_based_suggestions][:10]
 
-            # Randomly select up to 10 movies from the pool
-            import random
-            num_suggestions_to_return = min(10, len(top_suggestions_pool))
-            random_suggestions = random.sample(list(top_suggestions_pool), num_suggestions_to_return)
-
-            suggested_movies = [ums.movie for ums in random_suggestions]
+                    if not suggested_movies:
+                        logger.info(f"No genre-based top 10 suggestions found for user {user.id}. Falling back to random.")
+                        # Fallback to random if genre-based yields nothing
+                        all_movies_fallback = list(Movie.objects.all()) # type: ignore
+                        import random
+                        random.shuffle(all_movies_fallback)
+                        suggested_movies = all_movies_fallback[:10] # Default to 10 random
+                else:
+                    # If no genres selected, return random movies
+                    logger.info(f"No genres selected for user {user.id}. Returning random top 10 movies.")
+                    all_movies_fallback = list(Movie.objects.all()) # type: ignore
+                    import random
+                    random.shuffle(all_movies_fallback)
+                    suggested_movies = all_movies_fallback[:10] # Default to 10 random
+            else:
+                # If queryset exists and has non-zero totals, use it
+                import random
+                num_suggestions_to_return = min(10, len(top_suggestions_pool))
+                random_suggestions = random.sample(list(top_suggestions_pool), num_suggestions_to_return)
+                suggested_movies = [ums.movie for ums in random_suggestions]
 
             serializer = MovieSerializer(suggested_movies, many=True)
             logger.info(f"Successfully retrieved {len(suggested_movies)} top suggestions for user {user.id}.")
             return self._success_response(
-                data=serializer.data,
+                data={
+                    "count": len(suggested_movies), # This is the count of the actual suggestions returned (up to 10)
+                    "results": serializer.data
+                },
                 message="Top 10 movie suggestions retrieved successfully.",
                 status_code=status.HTTP_200_OK,
             )
@@ -299,22 +331,55 @@ class UserViewSet(ViewSet):
                         status_code=status.HTTP_400_BAD_REQUEST,
                     )
 
-            if not queryset.exists():
-                logger.info(f"No movie suggestions found for user {user.id} or all are watched.")
-                return self._error_response(
-                    message="No suggestions found for this user.",
-                    status_code=status.HTTP_404_NOT_FOUND,
-                )
+            # Check if the queryset is empty or contains only zero-total suggestions
+            if not queryset.exists() or all(s.total == 0 for s in queryset):
+                logger.info(f"No meaningful suggestions found for user {user.id}. Attempting genre-based or random fallback.")
+                
+                user_genres = UserGenre.objects.filter(user=user).values_list('genre_id', flat=True) # type: ignore
+                
+                if user_genres.exists():
+                    # If user has selected genres, suggest movies based on those genres
+                    all_movies = Movie.objects.all().prefetch_related('moviegenre_set') # type: ignore
+                    genre_based_suggestions = []
+                    for movie in all_movies:
+                        movie_genre_ids = [mg.genre_id for mg in movie.moviegenre_set.all()]
+                        score = genres_delta(list(user_genres), movie_genre_ids)
+                        if score > 0: # Only include movies with some genre match
+                            genre_based_suggestions.append((score, movie))
+                    
+                    # Sort by score (descending) and take the top ones
+                    genre_based_suggestions.sort(key=lambda x: x[0], reverse=True)
+                    suggested_movies = [movie for score, movie in genre_based_suggestions]
+                    
+                    if limit:
+                        suggested_movies = suggested_movies[:limit]
 
-            user_movie_suggestions = queryset
-
-            # Extract the Movie objects from UserMovieSuggestion instances
-            suggested_movies = [ums.movie for ums in user_movie_suggestions]
+                    if not suggested_movies:
+                        logger.info(f"No genre-based suggestions found for user {user.id}. Falling back to random.")
+                        # Fallback to random if genre-based yields nothing
+                        all_movies_fallback = list(Movie.objects.all()) # type: ignore
+                        import random
+                        random.shuffle(all_movies_fallback)
+                        suggested_movies = all_movies_fallback[:limit if limit else 10] # Default to 10 random if no limit
+                else:
+                    # If no genres selected, return random movies
+                    logger.info(f"No genres selected for user {user.id}. Returning random movies.")
+                    all_movies_fallback = list(Movie.objects.all()) # type: ignore
+                    import random
+                    random.shuffle(all_movies_fallback)
+                    suggested_movies = all_movies_fallback[:limit if limit else 10] # Default to 10 random if no limit
+            else:
+                # If queryset exists and has non-zero totals, use it
+                user_movie_suggestions = queryset
+                suggested_movies = [ums.movie for ums in user_movie_suggestions]
 
             serializer = MovieSerializer(suggested_movies, many=True)
             logger.info(f"Successfully retrieved {len(suggested_movies)} suggestions for user {user.id}.")
             return self._success_response(
-                data=serializer.data,
+                data={
+                    "count": len(suggested_movies), # Use len of actual suggested_movies
+                    "results": serializer.data
+                },
                 message="Movie suggestions retrieved successfully.",
                 status_code=status.HTTP_200_OK,
             )

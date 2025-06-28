@@ -84,6 +84,15 @@ class RegisterUserSerializer(serializers.Serializer):
         return instance
 
 
+class UserAdminSerializer(serializers.ModelSerializer):
+    """
+    Serializer for admin user management.
+    Includes all fields for detailed user information and management.
+    """
+    class Meta:
+        model = User
+        fields = '__all__' # Include all fields for admin purposes
+
 class UserProfileSerializer(serializers.ModelSerializer):
     """
     Serializer for user profile management (retrieve and update).

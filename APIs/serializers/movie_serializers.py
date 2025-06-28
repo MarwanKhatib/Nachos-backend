@@ -31,7 +31,7 @@ class MovieSerializer(serializers.Serializer):
     Handles serialization and deserialization of basic movie information.
     """
 
-    # Define fields at the class level first for better readability
+    id = serializers.IntegerField(read_only=True) # Add movie ID
     name = serializers.CharField()
     description = serializers.CharField()
     trailer = serializers.CharField()

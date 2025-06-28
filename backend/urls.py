@@ -12,7 +12,7 @@ from APIs.urls.user import user_urls
 from APIs.urls.genres import genres_urls
 from APIs.urls.watchlist import watchlist_urls
 from APIs.urls.authenticate import auth_urls
-from APIs.urls.user import admin_user_urls as admin_urls # Import admin URLs
+from APIs.urls.admin import urlpatterns as admin_urls # Import admin URLs
 from django.conf import settings
 from django.conf.urls.static import static # New import
 
