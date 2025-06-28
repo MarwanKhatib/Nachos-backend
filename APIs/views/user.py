@@ -30,7 +30,7 @@ from APIs.models.user_model import User
 from APIs.models.movie_model import Movie
 from APIs.models.community_model import UserSuggestionList, UserMovieSuggestion, UserGenre # Import UserMovieSuggestion, UserGenre
 from APIs.models.movie_genre_model import MovieGenre # Import MovieGenre
-from APIs.serializers.user_serializers import RegisterUserSerializer, UserProfileSerializer
+from APIs.serializers.user_serializers import RegisterUserSerializer, UserProfileSerializer, UserAdminSerializer
 from APIs.serializers.movie_serializers import MovieSerializer
 from APIs.utils.suggestion_helpers.genre_calculator import genres_delta # Import genres_delta
 
@@ -77,7 +77,7 @@ class UserViewSet(ViewSet):
         """
         Determines the permissions required for each action.
         """
-        if self.action in ["all_users", "create_superuser", "create_staff"]:
+        if self.action in ["all_users"]: # Removed create_superuser and create_staff
             return [IsSuperUser()]
         elif self.action in ["retrieve", "update", "destroy", "change_password", "upload_profile_picture"]:
             # If pk is provided, it's an admin action on another user, requires superuser
@@ -726,78 +726,3 @@ class UserViewSet(ViewSet):
                 message="An error occurred.",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-    @swagger_auto_schema(
-        operation_description="Create a new superuser (admin only)",
-        request_body=RegisterUserSerializer,
-        responses={
-            201: openapi.Response(
-                description="Superuser created successfully",
-                schema=RegisterUserSerializer,
-            ),
-            400: "Bad Request",
-            403: "Permission denied",
-            500: "Internal Server Error",
-        },
-    )
-    @action(detail=False, methods=["post"])
-    def create_superuser(self, request):
-        if not request.user.is_superuser:
-            return self._error_response(
-                message="Insufficient permissions.",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-        serializer = RegisterUserSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            user = cast(User, user)
-            user.is_superuser = True # type: ignore
-            user.is_staff = True # type: ignore
-            user.is_active = True
-            user.is_email_verified = True # Set to True as admin is creating it
-            user.save()
-            return self._success_response(
-                data=RegisterUserSerializer(user).data,
-                message="Superuser created successfully.",
-                status_code=status.HTTP_201_CREATED,
-            )
-        return self._error_response(
-            message="Superuser creation failed.", errors=serializer.errors
-        )
-
-    @swagger_auto_schema(
-        operation_description="Create a new staff user (staff or superuser only)",
-        request_body=RegisterUserSerializer,
-        responses={
-            201: openapi.Response(
-                description="Staff user created successfully",
-                schema=RegisterUserSerializer,
-            ),
-            400: "Bad Request",
-            403: "Permission denied",
-            500: "Internal Server Error",
-        },
-    )
-    @action(detail=False, methods=["post"])
-    def create_staff(self, request):
-        if not (request.user.is_staff or request.user.is_superuser):
-            return self._error_response(
-                message="Insufficient permissions.",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-        serializer = RegisterUserSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            user = cast(User, user)
-            user.is_staff = True # type: ignore
-            user.is_active = True
-            user.is_email_verified = True # Set to True as admin is creating it
-            user.save()
-            return self._success_response(
-                data=RegisterUserSerializer(user).data,
-                message="Staff user created successfully.",
-                status_code=status.HTTP_201_CREATED,
-            )
-        return self._error_response(
-            message="Staff user creation failed.", errors=serializer.errors
-        )

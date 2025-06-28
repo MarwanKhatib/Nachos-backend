@@ -9,7 +9,15 @@ from APIs.models.movie_model import Movie
 from APIs.models.user_model import User
 from APIs.models.group_model import Group
 from APIs.models.genre_model import Genre # Import Genre model
+from typing import cast
+from rest_framework.decorators import action
 from APIs.serializers.user_serializers import UserAdminSerializer, RegisterUserSerializer
+from APIs.views.user import IsSuperUser, IsStaffOrSuperUser # Import from APIs.views.user
+from django.db.models import Manager # Import Manager
+from APIs.managers import CustomUserManager # Import CustomUserManager
+from typing import cast # Ensure cast is imported
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +29,10 @@ class DashboardView(APIView):
         path = request.path
         logger.info(f"Request by user {user_id} to {path}")
         try:
-            movie_count = Movie.objects.count()
-            user_count = User.objects.count()
-            group_count = Group.objects.count()
-            genre_count = Genre.objects.count() # Add genre count
+            movie_count = cast(Manager, Movie.objects).count()
+            user_count = cast(CustomUserManager, User.objects).count()
+            group_count = cast(Manager, Group.objects).count()
+            genre_count = cast(Manager, Genre.objects).count() # Add genre count
 
             data = {
                 'movie_count': movie_count,
@@ -44,13 +52,13 @@ class UserPagination(PageNumberPagination):
     max_page_size = 100
 
 class UserListAPIView(ListAPIView):
-    queryset = User.objects.all().order_by('id')
+    queryset = cast(CustomUserManager, User.objects).all().order_by('id')
     serializer_class = UserAdminSerializer
     permission_classes = [IsAdminUser]
     pagination_class = UserPagination
 
 class UserDetailAPIView(RetrieveUpdateDestroyAPIView):
-    queryset = User.objects.all()
+    queryset = cast(CustomUserManager, User.objects).all()
     serializer_class = UserAdminSerializer
     permission_classes = [IsAdminUser]
     lookup_field = 'id' # Use 'id' as the lookup field for user detail
@@ -63,7 +71,7 @@ class UserDetailAPIView(RetrieveUpdateDestroyAPIView):
             instance.delete()
             logger.info(f"User {instance.id} deleted by admin {user_id} from {path}.")
             return Response(status=HTTP_204_NO_CONTENT)
-        except User.DoesNotExist:
+        except User.DoesNotExist: # Use User.DoesNotExist directly
             logger.warning(f"Attempt to delete non-existent user by admin {user_id} from {path}.")
             return Response({"detail": "User not found."}, status=HTTP_404_NOT_FOUND)
         except Exception as e:
@@ -71,16 +79,61 @@ class UserDetailAPIView(RetrieveUpdateDestroyAPIView):
             return Response({"error": "Internal server error."}, status=HTTP_500_INTERNAL_SERVER_ERROR)
 
 class UserCreateAPIView(CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = RegisterUserSerializer # Use RegisterUserSerializer for creating new users
+    queryset = cast(CustomUserManager, User.objects).all()
+    serializer_class = UserAdminSerializer # Use UserAdminSerializer for admin-created users
     permission_classes = [IsAdminUser]
 
     def create(self, request, *args, **kwargs):
         user_id = request.user.id if request.user.is_authenticated else 'anonymous'
         path = request.path
-        serializer = self.get_serializer(data=request.data)
+        
+        # For normal user creation by admin, ensure flags are set to False/True for active/verified
+        serializer = self.get_serializer(data=request.data, context={
+            'is_superuser_creation': False,
+            'is_staff_creation': False,
+            'is_active': True, # Auto-activate account
+            'is_email_verified': True # Auto-verify email
+        })
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
-        logger.info(f"New user created by admin {user_id} from {path}.")
+        logger.info(f"New normal user created by admin {user_id} from {path}.")
         return Response(serializer.data, status=HTTP_201_CREATED, headers=headers)
+
+class SuperuserCreateAPIView(CreateAPIView):
+    queryset = cast(CustomUserManager, User.objects).all()
+    serializer_class = UserAdminSerializer
+    permission_classes = [IsSuperUser] # Only superusers can create other superusers
+
+    def create(self, request, *args, **kwargs):
+        user_id = request.user.id if request.user.is_authenticated else 'anonymous'
+        path = request.path
+        serializer = self.get_serializer(data=request.data, context={
+            'is_superuser_creation': True,
+            'is_staff_creation': True, # Superusers are also staff
+            'is_active': True,
+            'is_email_verified': True
+        })
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save() # The serializer's create method handles setting flags
+        logger.info(f"New superuser created by admin {user_id} from {path}.")
+        return Response(UserAdminSerializer(user).data, status=HTTP_201_CREATED)
+
+class StaffUserCreateAPIView(CreateAPIView):
+    queryset = cast(CustomUserManager, User.objects).all()
+    serializer_class = UserAdminSerializer
+    permission_classes = [IsStaffOrSuperUser] # Staff or superuser can create staff users
+
+    def create(self, request, *args, **kwargs):
+        user_id = request.user.id if request.user.is_authenticated else 'anonymous'
+        path = request.path
+        serializer = self.get_serializer(data=request.data, context={
+            'is_staff_creation': True,
+            'is_superuser_creation': False, # Explicitly ensure staff user is not superuser
+            'is_active': True,
+            'is_email_verified': True
+        })
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save() # The serializer's create method handles setting flags
+        logger.info(f"New staff user created by admin {user_id} from {path}.")
+        return Response(UserAdminSerializer(user).data, status=HTTP_201_CREATED)

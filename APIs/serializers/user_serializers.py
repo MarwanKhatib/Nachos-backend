@@ -9,8 +9,12 @@ from rest_framework_simplejwt.serializers import (
 from rest_framework_simplejwt.tokens import RefreshToken # Import RefreshToken for type hinting
 import logging
 from typing import cast, Type # Import Type for type hinting
+from django.db import models # Import models
+from django.db.models import QuerySet, Manager # Import Manager
+from django.db.models.manager import BaseManager # Keep BaseManager for CustomUserManager inheritance
 
 from APIs.models import Genre, User
+from APIs.managers import CustomUserManager # Import CustomUserManager
 from django.contrib.auth.hashers import check_password
 
 
@@ -91,7 +95,51 @@ class UserAdminSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = User
-        fields = '__all__' # Include all fields for admin purposes
+        fields = ['email', 'username', 'password', 'birth_date'] # Only fields that are explicitly provided in the request body
+        extra_kwargs = {'password': {'write_only': True}} # Ensure password is write-only
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None)
+        
+        # Extract flags from context, which are set by the API views
+        is_superuser_creation = self.context.get('is_superuser_creation', False)
+        is_staff_creation = self.context.get('is_staff_creation', False)
+        is_active_context = self.context.get('is_active', False)
+        is_email_verified_context = self.context.get('is_email_verified', False)
+
+        # Initialize user flags based on context or default to False
+        is_superuser = is_superuser_creation
+        is_staff = is_staff_creation or is_superuser_creation # Superusers are also staff
+        is_active = is_active_context
+        is_email_verified = is_email_verified_context
+        
+        user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            birth_date=validated_data['birth_date'],
+            is_superuser=is_superuser,
+            is_staff=is_staff,
+            is_active=is_active,
+            is_email_verified=is_email_verified
+        )
+
+        if password:
+            user.set_password(password)
+
+        user.save()
+        return user
+
+    def update(self, instance, validated_data):
+        # Handle password update separately
+        password = validated_data.pop('password', None)
+        if password:
+            instance.set_password(password)
+
+        # Update other fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        return instance
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """
@@ -127,7 +175,7 @@ class VerifyEmailSerializer(serializers.Serializer):
         key = attrs.get("key")
         try:
             user = User.objects.get(email=email)
-        except User.DoesNotExist: # Pyright should recognize this now
+        except User.DoesNotExist:
             logging.error(f"Verification failed: User with email {email} does not exist.")
             raise serializers.ValidationError({"email": "User with this email does not exist."})
         if user.is_email_verified:
@@ -150,7 +198,7 @@ class SelectGenresSerializer(serializers.Serializer):
     genre_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
 
     def validate_genre_ids(self, value):
-        valid_genres = Genre.objects.filter(id__in=value) # Pyright should recognize this now
+        valid_genres = Genre.objects.filter(id__in=value)
         if len(valid_genres) != len(value):
             raise serializers.ValidationError("One or more genre IDs are invalid.")
         return value
@@ -186,7 +234,7 @@ class ResendVerificationEmailSerializer(serializers.Serializer):
             if user.is_email_verified:
                 raise serializers.ValidationError("Email is already verified.")
             return value
-        except User.DoesNotExist: # Pyright should recognize this now
+        except User.DoesNotExist:
             raise serializers.ValidationError("User with this email does not exist.")
 
 
@@ -253,7 +301,7 @@ class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
                 raise ValidationError("Email and password are required.")
             try:
                 user = User.objects.get(email=email)
-            except User.DoesNotExist: # Pyright should recognize this now
+            except User.DoesNotExist:
                 logging.error(f"No user found with email: {email}")
                 raise ValidationError("No user found with this email.")
             if user.check_password(password):
