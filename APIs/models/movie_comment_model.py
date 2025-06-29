@@ -10,7 +10,6 @@ class MovieComment(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ('user', 'movie') # A user can only comment once per movie
         ordering = ['-created_at']
 
     def __str__(self):

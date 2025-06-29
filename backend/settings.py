@@ -23,13 +23,6 @@ SECRET_KEY = config("SECRET_KEY")
 
 DEBUG = config("DEBUG", default=False, cast=bool)
 
-# ALLOWED_HOSTS = [
-#     # "marwankhatib.github.io",
-#     "127.0.0.1",
-#     "localhost",
-#     "nachos-backend.onrender.com",
-#     ".up.railway.app",
-# ]
 
 ALLOWED_HOSTS = [
     "127.0.0.1",
@@ -50,6 +43,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:*", # Allow localhost on any port
     "http://localhost:3000",
     "http://localhost:8000",  # Add the host port for local Docker access
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "https://*.vercel.app",  # Allow all Vercel subdomains
     "https://nachos-backend-production.up.railway.app",
     "https://nachos-theta.vercel.app",
@@ -74,6 +69,16 @@ CSRF_TRUSTED_ORIGINS = [
     "https://nachos-backend-production.up.railway.app",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
+    "https://*.vercel.app",  # Allow all Vercel subdomains
+    "https://nachos-backend-production.up.railway.app",
+    "https://nachos-theta.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:*",
+    "http://127.0.0.1:*",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    
 ]
 
 # Security settings for production

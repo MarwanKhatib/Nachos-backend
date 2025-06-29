@@ -419,7 +419,6 @@ class MovieCommentViewSet(ViewSet):
             400: "Bad Request",
             401: "Unauthorized",
             404: "Movie not found",
-            409: "Conflict (User already commented on this movie)",
             500: "Internal Server Error",
         },
         tags=["Movies"],
@@ -439,12 +438,6 @@ class MovieCommentViewSet(ViewSet):
             movie = Movie.objects.get(id=movie_id)
         except Movie.DoesNotExist:
             return Response({"error": "Movie not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        if MovieComment.objects.filter(user=user, movie=movie).exists():
-            return Response(
-                {"error": "You have already commented on this movie. Use PUT to update."},
-                status=status.HTTP_409_CONFLICT,
-            )
 
         try:
             comment = MovieComment.objects.create(user=user, movie=movie, comment=comment_text)
