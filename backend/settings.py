@@ -24,31 +24,10 @@ SECRET_KEY = config("SECRET_KEY")
 DEBUG = config("DEBUG", default=False, cast=bool)
 
 
-ALLOWED_HOSTS = [
-    "127.0.0.1",
-    "*.vercel.app",  # Allow all Vercel subdomains
-    ".up.railway.app",  # Allow all Railway subdomains
-    "localhost",
-    "nachos-backend-production.up.railway.app",
-    "nachos-theta.vercel.app",
-]
+ALLOWED_HOSTS = ["*"]
 
 # CORS Settings for production
-CORS_ALLOWED_ORIGINS = [
-    "http://127.0.0.1", # Allow 127.0.0.1 without a specific port
-    "http://127.0.0.1:*", # Allow 127.0.0.1 on any port
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8000",  # Add the host port for local Docker access
-    "http://localhost", # Allow localhost without a specific port
-    "http://localhost:*", # Allow localhost on any port
-    "http://localhost:3000",
-    "http://localhost:8000",  # Add the host port for local Docker access
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://*.vercel.app",  # Allow all Vercel subdomains
-    "https://nachos-backend-production.up.railway.app",
-    "https://nachos-theta.vercel.app",
-]
+CORS_ALLOW_ALL_ORIGINS = True
 
 # Allow credentials for Swagger UI
 CORS_ALLOW_CREDENTIALS = True
@@ -65,21 +44,7 @@ CORS_ALLOW_METHODS = [
 ]
 
 # CSRF settings for HTTPS
-CSRF_TRUSTED_ORIGINS = [
-    "https://nachos-backend-production.up.railway.app",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-    "https://*.vercel.app",  # Allow all Vercel subdomains
-    "https://nachos-backend-production.up.railway.app",
-    "https://nachos-theta.vercel.app",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:*",
-    "http://127.0.0.1:*",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    
-]
+CSRF_TRUSTED_ORIGINS = ["*"]
 
 # Security settings for production
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https') if not DEBUG else None
