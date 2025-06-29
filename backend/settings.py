@@ -32,19 +32,27 @@ DEBUG = config("DEBUG", default=False, cast=bool)
 # ]
 
 ALLOWED_HOSTS = [
-    "localhost",
-    "127.0.0.1", 
-    "nachos-backend-production.up.railway.app",
+    "127.0.0.1",
+    "*.vercel.app",  # Allow all Vercel subdomains
     ".up.railway.app",  # Allow all Railway subdomains
+    "localhost",
+    "nachos-backend-production.up.railway.app",
+    "nachos-theta.vercel.app",
 ]
 
 # CORS Settings for production
 CORS_ALLOWED_ORIGINS = [
-    "https://nachos-backend-production.up.railway.app",
-    "http://localhost:3000",
+    "http://127.0.0.1", # Allow 127.0.0.1 without a specific port
+    "http://127.0.0.1:*", # Allow 127.0.0.1 on any port
     "http://127.0.0.1:3000",
-    "http://localhost:8000",  # Add the host port for local Docker access
     "http://127.0.0.1:8000",  # Add the host port for local Docker access
+    "http://localhost", # Allow localhost without a specific port
+    "http://localhost:*", # Allow localhost on any port
+    "http://localhost:3000",
+    "http://localhost:8000",  # Add the host port for local Docker access
+    "https://*.vercel.app",  # Allow all Vercel subdomains
+    "https://nachos-backend-production.up.railway.app",
+    "https://nachos-theta.vercel.app",
 ]
 
 # Allow credentials for Swagger UI
