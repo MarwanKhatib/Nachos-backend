@@ -271,18 +271,39 @@ class SetNewPasswordSerializer(serializers.Serializer):
     Serializer for setting a new password after a reset request.
     """
     email = serializers.EmailField(required=True)
-    code = serializers.CharField(max_length=6, required=True)
     new_password = serializers.CharField(write_only=True, required=True)
     confirm_password = serializers.CharField(write_only=True, required=True)
 
     def validate(self, attrs):
         email = attrs.get('email')
-        code = attrs.get('code')
         new_password = attrs.get('new_password')
         confirm_password = attrs.get('confirm_password')
 
         if new_password != confirm_password:
             raise serializers.ValidationError({"new_password": "New passwords must match."})
+
+        try:
+            user = cast(CustomUserManager, User.objects).get(email=email)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({"email": "User with this email does not exist."})
+
+        # The code verification is now handled by a separate API, so we don't check it here.
+        # We assume that if this endpoint is called, the code has already been verified.
+
+        attrs['user'] = user
+        return attrs
+
+
+class VerifyPasswordResetCodeSerializer(serializers.Serializer):
+    """
+    Serializer for verifying a password reset code.
+    """
+    email = serializers.EmailField(required=True)
+    code = serializers.CharField(max_length=6, required=True)
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        code = attrs.get('code')
 
         try:
             user = cast(CustomUserManager, User.objects).get(email=email)

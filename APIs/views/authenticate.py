@@ -28,6 +28,7 @@ from APIs.serializers.user_serializers import (
     VerifyEmailSerializer,
     RequestPasswordResetSerializer,
     SetNewPasswordSerializer,
+    VerifyPasswordResetCodeSerializer, # New import
 )
 from APIs.tasks import create_user_suggestions, send_verification_email, send_password_reset_code_email
 
@@ -465,7 +466,43 @@ class AuthenticationViewSet(ViewSet):
             )
 
     @swagger_auto_schema(
-        operation_description="Set new password using email, code, and new password (without old password)",
+        operation_description="Verify password reset code (OTP)",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=["email", "code"],
+            properties={
+                "email": openapi.Schema(type=openapi.TYPE_STRING, format="email"),
+                "code": openapi.Schema(type=openapi.TYPE_STRING, description="6-digit OTP code"),
+            },
+        ),
+        responses={
+            200: "Code verified successfully",
+            400: "Invalid email or code",
+            404: "User not found",
+            500: "Internal Server Error",
+        },
+    )
+    @action(detail=False, methods=["post"])
+    def verify_password_reset_code(self, request):
+        """
+        Verifies the password reset code (OTP) sent to the user's email.
+        """
+        serializer = VerifyPasswordResetCodeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return self._error_response(
+                message="Invalid request data.",
+                errors=serializer.errors,
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # If serializer is valid, it means the email and code match a user
+        return self._success_response(
+            message="Password reset code verified successfully.",
+            status_code=status.HTTP_200_OK,
+        )
+
+    @swagger_auto_schema(
+        operation_description="Set new password using email and new password (code verification is separate)",
         request_body=SetNewPasswordSerializer,
         responses={
             200: "Password set successfully",
@@ -477,8 +514,8 @@ class AuthenticationViewSet(ViewSet):
     @action(detail=False, methods=["post"])
     def set_new_password(self, request):
         """
-        Sets a new password for the user using email, code, and new password.
-        This endpoint is for users who have forgotten their password and are using a reset code.
+        Sets a new password for the user using email and new password.
+        This endpoint is for users who have forgotten their password and have already verified their reset code.
         """
         serializer = SetNewPasswordSerializer(data=request.data)
         if not serializer.is_valid():
