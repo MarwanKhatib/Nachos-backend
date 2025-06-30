@@ -89,6 +89,7 @@ class AuthenticationViewSet(ViewSet):
             400: "Bad Request",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     def create_user(self, request):
         """
@@ -140,6 +141,7 @@ class AuthenticationViewSet(ViewSet):
             400: "Verification failed",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"], authentication_classes=[])
     def verify(self, request):
@@ -250,6 +252,7 @@ class AuthenticationViewSet(ViewSet):
             401: "Invalid credentials",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"], authentication_classes=[])
     def login(self, request):
@@ -312,6 +315,7 @@ class AuthenticationViewSet(ViewSet):
             401: "Invalid refresh token",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"])
     def refresh_token(self, request):
@@ -346,6 +350,7 @@ class AuthenticationViewSet(ViewSet):
             404: "User not found",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"])
     def resend_verification_email(self, request):
@@ -420,6 +425,7 @@ class AuthenticationViewSet(ViewSet):
             400: "Bad Request",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"])
     def request_password_reset(self, request):
@@ -481,6 +487,7 @@ class AuthenticationViewSet(ViewSet):
             404: "User not found",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"])
     def verify_password_reset_code(self, request):
@@ -510,6 +517,7 @@ class AuthenticationViewSet(ViewSet):
             404: "User not found",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"])
     def set_new_password(self, request):
@@ -556,6 +564,7 @@ class AuthenticationViewSet(ViewSet):
             400: "Bad Request / Invalid token",
             500: "Internal Server Error",
         },
+        tags=['Authentication'],
     )
     @action(detail=False, methods=["post"])
     def logout(self, request):

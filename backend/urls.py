@@ -4,7 +4,8 @@ from drf_yasg import openapi
 from drf_yasg.views import get_schema_view
 from rest_framework import permissions
 import APIs
-from APIs.urls import group_urls, community_urls
+from APIs.urls import community_urls
+from APIs.urls import groups # New import
 from APIs.urls.movie import movie_urls
 from APIs.urls import movie as movie_urls_file
 from APIs.views import movie as movie_views
@@ -18,12 +19,12 @@ from django.conf.urls.static import static # New import
 
 schema_view = get_schema_view(
     openapi.Info(
-        title="Nachos API",
+        title="NACHOS API",
         default_version="v1",
-        description="API documentation for Nachos backend",
+        description="API DOCUMENTATION FOR NACHOS BACKEND",
         terms_of_service="https://www.google.com/policies/terms/",
         contact=openapi.Contact(email="contact@nachos.com"),
-        license=openapi.License(name="BSD License"),
+        license=openapi.License(name="BSD LICENSE"),
     ),
     public=True,
     permission_classes=(permissions.AllowAny,),
@@ -42,7 +43,7 @@ urlpatterns = [
         path("genres/", include(genres_urls)),
         path("watchlist/", include(watchlist_urls)),
         path("admin/", include(admin_urls)),
-        path("groups/", include(group_urls.urlpatterns)),
+        path("groups/", include("APIs.urls.groups")),
         path("communities/", include(community_urls.urlpatterns)),
     ])),
     # Swagger documentation URLs

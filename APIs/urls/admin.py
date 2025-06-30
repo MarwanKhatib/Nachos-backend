@@ -1,5 +1,5 @@
 from django.urls import path
-from APIs.views.admin import DashboardView, UserListAPIView, UserDetailAPIView, UserCreateAPIView, SuperuserCreateAPIView, StaffUserCreateAPIView
+from APIs.views.admin import DashboardView, UserListAPIView, UserDetailAPIView, UserCreateAPIView, SuperuserCreateAPIView, StaffUserCreateAPIView, AllPostsListAPIView
 from APIs.views.user import UserViewSet # Import UserViewSet for admin-related user views
 
 urlpatterns = [
@@ -11,4 +11,5 @@ urlpatterns = [
     path('users/create-staff/', StaffUserCreateAPIView.as_view(), name='admin-create-staff'), # For creating staff users by admin
     path('users/<int:id>/', UserDetailAPIView.as_view(), name='admin-user-detail'), # Retrieve/Update/Delete user by ID
     path('users/<int:pk>/change-password/', UserViewSet.as_view({'put': 'change_password'}), name='admin-user-change-password'), # Admin change password for a user
+    path('posts/', AllPostsListAPIView.as_view(), name='admin-all-posts-list'), # List all posts from all groups
 ]

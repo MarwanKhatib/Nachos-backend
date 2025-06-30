@@ -8,10 +8,11 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework import filters # Import filters
 from APIs.models.movie_model import Movie
 from APIs.models.user_model import User
-from APIs.models.group_model import Group
+from APIs.models.group_model import Group, Post # Import Post model
 from APIs.models.genre_model import Genre # Import Genre model
 from typing import cast
 from rest_framework.decorators import action
+from APIs.serializers.group_serializers import AdminPostSerializer # Import AdminPostSerializer
 from APIs.serializers.user_serializers import UserAdminSerializer, RegisterUserSerializer
 from APIs.views.user import IsSuperUser, IsStaffOrSuperUser # Import from APIs.views.user
 from django.db.models import Manager # Import Manager
@@ -21,8 +22,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 import django_filters
 from drf_yasg import openapi # Import openapi
 from drf_yasg.utils import swagger_auto_schema # Import swagger_auto_schema
-
-logger = logging.getLogger(__name__)
+from django.apps import apps # Import apps to get models
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +37,15 @@ class DashboardView(APIView):
             movie_count = cast(Manager, Movie.objects).count() # type: ignore
             user_count = cast(CustomUserManager, User.objects).count() # type: ignore
             group_count = cast(Manager, Group.objects).count() # type: ignore
-            genre_count = cast(Manager, Genre.objects).count() # type: ignore # Add genre count
+            genre_count = cast(Manager, Genre.objects).count() # type: ignore
+            post_count = cast(Manager, Post.objects).count() # type: ignore
 
             data = {
                 'movie_count': movie_count,
                 'user_count': user_count,
                 'group_count': group_count,
-                'genre_count': genre_count, # Include genre count in data
+                'genre_count': genre_count,
+                'post_count': post_count,
             }
             logger.info(f"Request by user {user_id} to {path} successful.")
             return Response(data, status=HTTP_200_OK)
@@ -55,6 +57,30 @@ class UserPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
+
+class PostPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+class PostFilter(django_filters.FilterSet):
+    content = django_filters.CharFilter(field_name='content', lookup_expr='icontains')
+    add_date_after = django_filters.DateFilter(field_name='add_date', lookup_expr='gte')
+    add_date_before = django_filters.DateFilter(field_name='add_date', lookup_expr='lte')
+    reaction_no_min = django_filters.NumberFilter(field_name='reaction_no', lookup_expr='gte')
+    reaction_no_max = django_filters.NumberFilter(field_name='reaction_no', lookup_expr='lte')
+    comment_no_min = django_filters.NumberFilter(field_name='comment_no', lookup_expr='gte')
+    comment_no_max = django_filters.NumberFilter(field_name='comment_no', lookup_expr='lte')
+
+    class Meta:
+        model = Post
+        fields = [
+            'id',
+            'content',
+            'add_date',
+            'reaction_no',
+            'comment_no',
+        ]
 
 class UserFilter(django_filters.FilterSet):
     email = django_filters.CharFilter(field_name='email', lookup_expr='icontains')
@@ -367,3 +393,115 @@ class StaffUserCreateAPIView(CreateAPIView):
         user = serializer.save() # The serializer's create method handles setting flags
         logger.info(f"New staff user created by admin {user_id} from {path}.")
         return Response(UserAdminSerializer(user).data, status=HTTP_201_CREATED)
+
+class AllPostsListAPIView(ListAPIView):
+    queryset = cast(Manager, Post.objects).all().order_by('-add_date') # type: ignore
+    serializer_class = AdminPostSerializer
+    permission_classes = [IsAdminUser]
+    pagination_class = PostPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_class = PostFilter
+    search_fields = ['content']
+
+    @swagger_auto_schema(
+        operation_description="List all posts from all groups with pagination and search filter.",
+        operation_summary="List all posts",
+        manual_parameters=[
+            openapi.Parameter(
+                "search",
+                openapi.IN_QUERY,
+                description="Search by post content (case-insensitive)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                "page",
+                openapi.IN_QUERY,
+                description="Page number to retrieve.",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                "page_size",
+                openapi.IN_QUERY,
+                description="Number of results per page (default: 10).",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                "content",
+                openapi.IN_QUERY,
+                description="Filter by post content (case-insensitive contains)",
+                type=openapi.TYPE_STRING,
+            ),
+            openapi.Parameter(
+                "add_date_after",
+                openapi.IN_QUERY,
+                description="Filter by creation date greater than or equal to (YYYY-MM-DD)",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_DATE,
+            ),
+            openapi.Parameter(
+                "add_date_before",
+                openapi.IN_QUERY,
+                description="Filter by creation date less than or equal to (YYYY-MM-DD)",
+                type=openapi.TYPE_STRING,
+                format=openapi.FORMAT_DATE,
+            ),
+            openapi.Parameter(
+                "reaction_no_min",
+                openapi.IN_QUERY,
+                description="Filter by minimum number of reactions",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                "reaction_no_max",
+                openapi.IN_QUERY,
+                description="Filter by maximum number of reactions",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                "comment_no_min",
+                openapi.IN_QUERY,
+                description="Filter by minimum number of comments",
+                type=openapi.TYPE_INTEGER,
+            ),
+            openapi.Parameter(
+                "comment_no_max",
+                openapi.IN_QUERY,
+                description="Filter by maximum number of comments",
+                type=openapi.TYPE_INTEGER,
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                description="Paginated list of posts",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'count': openapi.Schema(type=openapi.TYPE_INTEGER, description="Total number of posts"),
+                        'next': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_URI, nullable=True, description="URL to the next page"),
+                        'previous': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_URI, nullable=True, description="URL to the previous page"),
+                        'results': openapi.Schema(type=openapi.TYPE_ARRAY, items=openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'post_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'content': openapi.Schema(type=openapi.TYPE_STRING),
+                                'reaction_no': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'comment_no': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'is_editable': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                                'group_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'group_name': openapi.Schema(type=openapi.TYPE_STRING),
+                                'group_owner_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'group_owner_username': openapi.Schema(type=openapi.TYPE_STRING),
+                                'post_owner_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                'post_owner_username': openapi.Schema(type=openapi.TYPE_STRING),
+                                'created_at_date': openapi.Schema(type=openapi.TYPE_STRING, format=openapi.FORMAT_DATETIME),
+                            }
+                        )),
+                    }
+                )
+            ),
+            500: "Internal Server Error",
+        },
+        tags=["Admin Posts"],
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

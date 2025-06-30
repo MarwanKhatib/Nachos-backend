@@ -8,7 +8,6 @@ from .group_serializers import (
     CommentPostSerializer,
     CreateGroupSerializer,
     EditCommentSerializer,
-    JoinGroupSerializer,
     UnblockUserSerializer,
     WritePostSerializer,
 )
@@ -44,7 +43,6 @@ __all__ = [
     "RateMovieSerializer",
     "MovieReviewSerializer", # Add the new serializer
     "CreateGroupSerializer",
-    "JoinGroupSerializer",
     "BlockUserSerializer",
     "UnblockUserSerializer",
     "WritePostSerializer",
