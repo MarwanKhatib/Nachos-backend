@@ -1086,16 +1086,29 @@ class GetGroupPosts(APIView):
 
                 is_editable = is_post_owner # Only the post owner can edit
 
+                # Get the user who created the post
+                user_post = UserPost.objects.filter(post=post).first()
+                creator_id = user_post.user.id if user_post else None
+                creator_username = user_post.user.username if user_post else None
+
+                # Check if the user liked the post
+                is_liked = UserReact.objects.filter(user=user, post=post).exists()
+
                 post_info = {
                     "post_id": post.id,
                     "content": post.content,
                     "reaction_no": reactions,
                     "comment_no": post.comment_no,
-                    "is_editable": is_editable, # Add the is_editable flag
+                    "is_editable": is_editable,  # Add the is_editable flag
+                    "user_id": creator_id,
+                    "username": creator_username,
+                    "is_liked": is_liked
                 }
                 post_data.append(post_info)
             logger.info(f"Group posts retrieved successfully by user {user.id} to {path} for group {group_id}.")
-            return Response({"posts": post_data}, status=status.HTTP_200_OK)
+            return Response({
+                "posts": post_data
+            }, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Get group posts failed for user {user.id} to {path}: {str(e)}", exc_info=True)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -1143,14 +1156,22 @@ class GetUserGroupPosts(APIView):
             # Serialize the data
             post_data = []
             for post in posts:
-                # Get the group associated with the post
+                # Get the UserPost object to access user and group information
                 try:
                     user_post = UserPost.objects.get(post=post)
                     group_name = user_post.group.name
+                    creator_id = user_post.user.id
+                    creator_username = user_post.user.username
+                    is_owner = user_post.user == user
                 except UserPost.DoesNotExist:
-                    group_name = None  # In case the post is not linked to any group
+                    group_name = None
+                    creator_id = None
+                    creator_username = None
+                    is_owner = False
 
                 reactions = UserReact.objects.filter(post=post).count()
+                is_liked = UserReact.objects.filter(user=user, post=post).exists()
+                is_editable = is_owner
 
                 post_info = {
                     "post_id": post.id,
@@ -1158,6 +1179,11 @@ class GetUserGroupPosts(APIView):
                     "reaction_no": reactions,
                     "comment_no": post.comment_no,
                     "group_name": group_name,  # Include the group name here
+                    "user_id": creator_id,
+                    "username": creator_username,
+                    "is_liked": is_liked,
+                    "is_owner": is_owner,
+                    "is_editable": is_editable,
                 }
                 post_data.append(post_info)
             logger.info(f"User group posts retrieved successfully by user {user.id} to {path}.")
@@ -1165,7 +1191,6 @@ class GetUserGroupPosts(APIView):
         except Exception as e:
             logger.error(f"Get user group posts failed for user {user.id} to {path}: {str(e)}", exc_info=True)
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 
 class GetAllCommentsForPost(APIView):
@@ -1243,7 +1268,7 @@ class GetAllCommentsForPost(APIView):
             # Get post details
             user_post = UserPost.objects.filter(post=post).first()
             if user_post:
-                group_name = user_post.group.name
+                group_name = user_post.group.name if user_post.group else None
             else:
                 group_name = None
 
