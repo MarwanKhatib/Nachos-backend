@@ -192,6 +192,7 @@ class MovieCommentSerializer(serializers.ModelSerializer):
     """
 
     username = serializers.CharField(source="user.username", read_only=True)
+    user_id = serializers.ReadOnlyField(source="user.id")
     content = serializers.CharField(required=True, min_length=1)
     add_date = serializers.DateTimeField(read_only=True)
 
@@ -202,7 +203,7 @@ class MovieCommentSerializer(serializers.ModelSerializer):
         """
 
         model = MovieCommunity
-        fields = ["id", "username", "content", "add_date"]
+        fields = ["id", "username", "user_id", "content", "add_date"]
 
     def validate_content(self, value):
         """Validate comment content"""

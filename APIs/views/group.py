@@ -1259,6 +1259,7 @@ class GetAllCommentsForPost(APIView):
                 comment_info = {
                     "comment_id": comment.id,
                     "username": comment.user.username,
+                    "user_id": comment.user.id,
                     "content": comment.content,
                     "add_date": comment.add_date,
                     "is_editable": (comment.user == user),
